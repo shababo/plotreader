@@ -6,7 +6,7 @@ The plan should end with a sub-task that can achieve the overall task. Luckily w
 Example Plan for this task. Only change this plan if it seems absolutely necessary.:
 === Initial plan ===
 generate_scenario_and_figure_idea:
-Generate a scenario and describe the data and how it will be plotted in the figure. Multiple panels are okay and encouraged. Think about the types of figures one sees in academic papers. The final product should look like those. -> A description of the scenario and the figure.
+Generate a scenario and describe the data and how it will be plotted in the figure. Make sure you have some mathematical model to generate the data so it can some effect and not just be noise. Multiple panels are okay and encouraged. Think about the types of figures one sees in academic papers. The final product should look like those. -> A description of the scenario and the figure.
 deps: []
 
 
