@@ -20,6 +20,7 @@ dependencies = [
     "tree-sitter-python>=0.23.2",
     "datasets>=3.0.0",
     "matplotlib>=3.9.2",
+    "seaborn>=0.13.2",
 ]
 
 [build-system]
