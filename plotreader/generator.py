@@ -1,4 +1,4 @@
-from typing import Union
+from typing import Union, List
 import os
 from pathlib import Path
 
@@ -8,7 +8,7 @@ from llama_index.core.tools import QueryEngineTool, ToolMetadata
 from llama_index.tools.code_interpreter.base import CodeInterpreterToolSpec
 from llama_index.core.agent import StructuredPlannerAgent, FunctionCallingAgentWorker
 
-from plotreader.util import parse_matplotlib_galleries, parse_seaborn_examples
+from plotreader.doc_utils import parse_matplotlib_galleries, parse_seaborn_examples
 from plotreader.prompt import _INITIAL_PLAN_PROMPT, _PLAN_REFINE_PROMPT, _PLOTGEN_PROMPT
 
 def _load_example():
@@ -16,17 +16,25 @@ def _load_example():
 
 class PlotGenerator():
 
-    
-
     def __init__(
         self,
         vector_store_path: str = None,
+        data_scenario: str = None,
+        examples_dir: str = None,
     ):
         
         self._vector_store_path = vector_store_path
+        self._set_scenario(data_scenario=data_scenario, examples_dir=examples_dir)
+
         self._is_spawned = False
         self._vec_index = {}
         self._agent = None
+
+    def _set_scenario(self, data_scenario: str = None, examples_dir: str = None):
+
+        self._data_scenario = data_scenario or "Make up whatever you want!"
+        self._examples_dir = examples_dir or []
+
 
     def spawn(self):
 
@@ -73,14 +81,20 @@ class PlotGenerator():
             # delete_task_on_finish=True,
         )
 
+    def _generate(self, )
+
     
-    def run(self, output_dir: str, data_scenario: str = None):
+    def run(self, output_dir: str, data_scenario: str = None, examples_dir: List[str] = None):
+
+        self._set_scenario(data_scenario=data_scenario, examples_dir=examples_dir)
 
         if not self._is_spawned:
             self.spawn()
 
         data_scenario = data_scenario or "Make up whatever you want!"
-        response = self._agent.query(_PLOTGEN_PROMPT.format(output_dir=output_dir, data_scenario=data_scenario))
+        response = self._agent._generate(_PLOTGEN_PROMPT.format(output_dir=output_dir, data_scenario=data_scenario))
+
+        return response
             
 
 
