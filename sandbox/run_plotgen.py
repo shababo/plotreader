@@ -4,11 +4,10 @@ from plotreader.generator import PlotGenerator
 if __name__ == "__main__":
 
     generator = PlotGenerator(
-        storage_dir = "/Users/loyalshababo/dev/plotreader/sandbox/storage",
-           
+        storage_dir = "/Users/loyalshababo/dev/plotreader/sandbox/storage", 
     )
-    generator.run(
-        output_dir="/Users/loyalshababo/dev/plotreader/sandbox/storage/plotgen_output",
+
+    generator.generate(
         # data_scenario = (
         #     "Scientists are desigining new opsins by mutating existing ones. " +
         #     "They then measure the currents produced when exciting with different wavelengths of light. " + 

@@ -19,10 +19,18 @@ from plotreader import _DEFAULT_EMBEDDING_MODEL
 _DEFAULT_RETRIEVAL_K = 5
 
 class DocumentHandler(ABC):
-    name: str
-    desc: str
-    storage_dir: str
-    embedding_model: str = _DEFAULT_EMBEDDING_MODEL
+    
+
+    def __init__(
+        self,
+        name: str,
+        desc: str,
+        storage_dir: str,
+        # embedding_model: str = _DEFAULT_EMBEDDING_MODEL
+    ):
+        self.name = name
+        self.desc = desc
+        self.storage_dir = storage_dir
 
     @abstractmethod
     def load_docs(self) -> List[Document]:
@@ -54,8 +62,8 @@ class DocumentHandler(ABC):
 
         return vec_index
 
-    @abstractmethod
     @property
+    @abstractmethod
     def node_parser(self):
         pass
 
@@ -78,8 +86,9 @@ class DocumentHandler(ABC):
     
     def query_engine_tool(self, top_k: int = _DEFAULT_RETRIEVAL_K) -> QueryEngineTool:
         "Return a Tool that can query this document."
+        
         return QueryEngineTool(
-                query_engine=self.vector_index.as_query_engine(similarity_top_k=top_k),
+                query_engine=self.vector_index().as_query_engine(similarity_top_k=top_k),
                 metadata=ToolMetadata(
                     name=f"{self.name}_vector_tool",
                     description=f"This tool can query these documents: {self.desc}.",
@@ -88,7 +97,7 @@ class DocumentHandler(ABC):
 
     def _index_files_in_dir(self, dirpath: str):
 
-        _DIR_FILES = [
+        _INDEX_FILES = [
             'default__vector_store.json',
             'docstore.json',
             'graph_store.json',
@@ -96,7 +105,7 @@ class DocumentHandler(ABC):
             'index_store.json',
         ]
 
-        return all([os.path.exists(os.path.join(dirpath, self.name))])
+        return all([os.path.exists(os.path.join(dirpath, filename)) for filename in _INDEX_FILES])
     
 
 

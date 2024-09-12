@@ -71,3 +71,5 @@ _PLOTGEN_PROMPT = (
     )
 
 _PLAN_REFINE_PROMPT = "There should not be a need to do this. Keep the plan as is."
+
+_DEFAULT_SCENARIO = "Make up whatever you want!"

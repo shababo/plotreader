@@ -31,14 +31,13 @@ class PlotGenerator():
         self._storage_dir = storage_dir or DEFAULT_STORAGE_DIR
         self._default_data_scenario = data_scenario or _DEFAULT_SCENARIO
         self._examples_dir = examples_dir
-
-        self._set_scenario()
-
+        
         self._is_spawned = False
         self._vec_index = {}
         self._agent = None
 
         self._instantiate_plotting_repo_handlers()
+
         if auto_spawn:
             self.spawn()
 
@@ -56,23 +55,23 @@ class PlotGenerator():
  
         self._plotting_repos = {}
         self._plotting_repos['matplotlib'] = GitHubRepoHandler(
-            name = 'matplotib_galleries',
+            name = 'matplotlib_galleries',
             repo = 'matplotlib',
             owner = 'matplotlib',
             desc = 'All of the code for the Matplotlib galleries.',
-            storage_dir = self._storage_dir,
+            storage_dir = os.path.join(self._storage_dir,'indexes'),
             include_dirs = ['galleries'],
             include_exts = ['.py'],
             language = 'python'
         )
 
         self._plotting_repos['seaborn'] = GitHubRepoHandler(
-            name = 'matplotib_examples',
+            name = 'seaborn_examples',
             repo = 'seaborn',
             owner = 'mwaskom',
             branch = 'master',
             desc = 'All of the code for the Seaborn examples.',
-            storage_dir = self._storage_dir,
+            storage_dir = os.path.join(self._storage_dir,'indexes'),
             include_dirs = ['examples'],
             include_exts = ['.py'],
             language = 'python'
@@ -80,7 +79,7 @@ class PlotGenerator():
 
     def _get_plotting_repo_tools(self):
 
-        return [handler.query_engine_tool() for handler in self._plotting_repos]
+        return [handler.query_engine_tool() for handler_name, handler in self._plotting_repos.items()]
     
     def spawn(self, force_respawn: bool = False):
 
@@ -97,7 +96,7 @@ class PlotGenerator():
                 tools,
                 # llm=Anthropic(model='claude-3-5-sonnet-20240620', max_tokens=2048, temperature=0.1),
                 verbose=True,
-                max_function_calls=2
+                max_function_calls=5
             )
 
             self._agent = StructuredPlannerAgent(
@@ -117,8 +116,8 @@ class PlotGenerator():
         
         self.set_scenario(data_scenario=data_scenario, examples_dir=examples_dir)
 
-        response = self._agent.query(self._query_prompt)
-        return response
+        # response = self._agent.query(self._query_prompt)
+        # return response
             
 
 
