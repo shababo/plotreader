@@ -134,7 +134,8 @@ class DirectoryHandler(DocumentHandler):
             vendor_multimodal_model_name='claude-3-5-sonnet-20240620',
             show_progress=True,
         )
-        self._dir_reader = SimpleDirectoryReader(input_dir=self._dirpath)
+        file_extractor =  {".pdf": parser}
+        self._dir_reader = SimpleDirectoryReader(input_dir=self._dirpath, file_extractor=file_extractor)
         
     def load_docs(self) -> List[Document]:
 

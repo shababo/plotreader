@@ -4,7 +4,7 @@ import os
 from llama_index.core import Settings
 from llama_index.tools.code_interpreter.base import CodeInterpreterToolSpec
 from llama_index.core.agent import StructuredPlannerAgent, FunctionCallingAgentWorker
-
+from llama_index.core.tools import QueryEngineTool
 
 from plotreader.prompt import _INITIAL_PLAN_PROMPT, _PLAN_REFINE_PROMPT, _PLOTGEN_PROMPT, _DEFAULT_SCENARIO
 from plotreader.document import GitHubRepoHandler, DirectoryHandler
@@ -34,6 +34,7 @@ class PlotGenerator():
         self._agent = None
 
         self._instantiate_plotting_repo_handlers()
+        self._examples_handler = None
 
         if auto_spawn:
             self.spawn()
@@ -46,10 +47,15 @@ class PlotGenerator():
         self._query_prompt = _PLOTGEN_PROMPT.format(output_dir=gen_output_dir, data_scenario=data_scenario)
 
         examples_dir = examples_dir or self._examples_dir
-        self._examples_handler = DirectoryHandler(
-            name = 'scenario_examples',
-            dirpath = examples_dir,
-        )
+        self._examples_handler = None
+        if examples_dir is not None:
+            self._examples_handler = DirectoryHandler(
+                name = 'data_scenario_figure_examples',
+                desc = f'Papers and/or figures related to the given data scenario. Data scenario: {data_scenario}',
+                dirpath = examples_dir,
+            )
+            self.spawn(force_respawn=True)
+        
 
     def _instantiate_plotting_repo_handlers(self) -> None:
  
@@ -77,19 +83,25 @@ class PlotGenerator():
             language = 'python'
         )
 
-    def _get_plotting_repo_tools(self):
+    def _get_plotting_repo_tools(self) -> List[QueryEngineTool]:
 
         return [handler.query_engine_tool() for handler_name, handler in self._plotting_repos.items()]
     
-    def spawn(self, force_respawn: bool = False):
+    def _get_examples_tools(self) -> List[QueryEngineTool]:
+
+        if self._examples_handler is not None:
+            return [self._examples_handler.query_engine_tool()]
+
+    
+    def spawn(self, force_respawn: bool = False) -> None:
 
         if force_respawn or not self._is_spawned:
 
             plotting_repo_tools = self._get_plotting_repo_tools()
-
+            examples_tools = self._get_examples_tools()
             code_interpreter_tools = CodeInterpreterToolSpec().to_tool_list()
 
-            tools = plotting_repo_tools + code_interpreter_tools
+            tools = plotting_repo_tools + examples_tools + code_interpreter_tools
 
             # build agent   
             tool_agent_worker = FunctionCallingAgentWorker.from_tools(
