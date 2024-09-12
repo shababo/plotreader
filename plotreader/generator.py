@@ -1,4 +1,4 @@
-from typing import Union, List
+from typing import Union, List, Any
 import os
 from pathlib import Path
 
@@ -8,92 +8,116 @@ from llama_index.core.tools import QueryEngineTool, ToolMetadata
 from llama_index.tools.code_interpreter.base import CodeInterpreterToolSpec
 from llama_index.core.agent import StructuredPlannerAgent, FunctionCallingAgentWorker
 
-from plotreader.doc_utils import parse_matplotlib_galleries, parse_seaborn_examples
-from plotreader.prompt import _INITIAL_PLAN_PROMPT, _PLAN_REFINE_PROMPT, _PLOTGEN_PROMPT
 
-def _load_example():
-    pass
+from plotreader.prompt import _INITIAL_PLAN_PROMPT, _PLAN_REFINE_PROMPT, _PLOTGEN_PROMPT, _DEFAULT_SCENARIO
+from plotreader.document import GitHubRepoHandler, DirectoryHandler
+
+# Get the directory this file is in
+THIS_DIR = os.path.dirname(os.path.abspath(__file__))
+DEFAULT_STORAGE_DIR = os.path.join('..', 'storage')
 
 class PlotGenerator():
 
     def __init__(
         self,
-        vector_store_path: str = None,
+        llm: Any = None,
+        storage_dir: str = None,
         data_scenario: str = None,
         examples_dir: str = None,
+        auto_spawn: bool = False,
     ):
         
-        self._vector_store_path = vector_store_path
-        self._set_scenario(data_scenario=data_scenario, examples_dir=examples_dir)
+        self._llm = llm or Settings.llm
+        self._storage_dir = storage_dir or DEFAULT_STORAGE_DIR
+        self._default_data_scenario = data_scenario or _DEFAULT_SCENARIO
+        self._examples_dir = examples_dir
+
+        self._set_scenario()
 
         self._is_spawned = False
         self._vec_index = {}
         self._agent = None
 
-    def _set_scenario(self, data_scenario: str = None, examples_dir: str = None):
+        self._instantiate_plotting_repo_handlers()
+        if auto_spawn:
+            self.spawn()
 
-        self._data_scenario = data_scenario or "Make up whatever you want!"
-        self._examples_dir = examples_dir or []
+    def set_scenario(self, data_scenario: str = None, examples_dir: str = None) -> None:
 
+        data_scenario = data_scenario or self._default_data_scenario
+        gen_output_dir = os.path.join(self._storage_dir,'output')
+        
+        self._query_prompt = _PLOTGEN_PROMPT.format(output_dir=gen_output_dir, data_scenario=data_scenario)
 
-    def spawn(self):
+        examples_dir = examples_dir or self._examples_dir
+        # self._examples_handler = DirectoryHandler()
 
-        if not self._is_spawned:
-            self._vec_index['matlab'] = parse_matplotlib_galleries(os.path.join(self._vector_store_path, 'matplotlab_galleries'))
-            self._vec_index['seaborn'] = parse_seaborn_examples(os.path.join(self._vector_store_path, 'seaborn_examples'))
-
-        tools = [
-            QueryEngineTool(
-                query_engine=self._vec_index['matlab'].as_query_engine(similarity_top_k=5),
-                metadata=ToolMetadata(
-                    name="matplotlib_vector_tool",
-                    description="This tool can query the matplotlib gallery examples.",
-                ),
-            ),
-            QueryEngineTool(
-                query_engine=self._vec_index['seaborn'].as_query_engine(similarity_top_k=5),
-                metadata=ToolMetadata(
-                    name="seaborn_vector_tool",
-                    description="This tool can query the seaborn examples examples.",
-                ),
-            ),
-        ] + CodeInterpreterToolSpec().to_tool_list()
-
-        # build agent
-        tool_agent_worker = FunctionCallingAgentWorker.from_tools(
-            tools,
-            # llm=Anthropic(model='claude-3-5-sonnet-20240620', max_tokens=2048, temperature=0.1),
-            verbose=True,
-            max_function_calls=2
+    def _instantiate_plotting_repo_handlers(self) -> None:
+ 
+        self._plotting_repos = {}
+        self._plotting_repos['matplotlib'] = GitHubRepoHandler(
+            name = 'matplotib_galleries',
+            repo = 'matplotlib',
+            owner = 'matplotlib',
+            desc = 'All of the code for the Matplotlib galleries.',
+            storage_dir = self._storage_dir,
+            include_dirs = ['galleries'],
+            include_exts = ['.py'],
+            language = 'python'
         )
 
-        self._agent = StructuredPlannerAgent(
-            tool_agent_worker, 
-            tools=tools, 
-            verbose=True, 
-            # llm=Anthropic(
-            #     model='claude-3-5-sonnet-20240620', 
-            #     max_tokens=2048, 
-            #     temperature=0.1
-            # ),
-            initial_plan_prompt=_INITIAL_PLAN_PROMPT,
-            plan_refine_prompt=_PLAN_REFINE_PROMPT,
-            # delete_task_on_finish=True,
+        self._plotting_repos['seaborn'] = GitHubRepoHandler(
+            name = 'matplotib_examples',
+            repo = 'seaborn',
+            owner = 'mwaskom',
+            branch = 'master',
+            desc = 'All of the code for the Seaborn examples.',
+            storage_dir = self._storage_dir,
+            include_dirs = ['examples'],
+            include_exts = ['.py'],
+            language = 'python'
         )
 
-    def _generate(self, )
+    def _get_plotting_repo_tools(self):
+
+        return [handler.query_engine_tool() for handler in self._plotting_repos]
+    
+    def spawn(self, force_respawn: bool = False):
+
+        if force_respawn or not self._is_spawned:
+
+            plotting_repo_tools = self._get_plotting_repo_tools()
+
+            code_interpreter_tools = CodeInterpreterToolSpec().to_tool_list()
+
+            tools = plotting_repo_tools + code_interpreter_tools
+
+            # build agent   
+            tool_agent_worker = FunctionCallingAgentWorker.from_tools(
+                tools,
+                # llm=Anthropic(model='claude-3-5-sonnet-20240620', max_tokens=2048, temperature=0.1),
+                verbose=True,
+                max_function_calls=2
+            )
+
+            self._agent = StructuredPlannerAgent(
+                tool_agent_worker, 
+                tools=tools, 
+                verbose=True, 
+                llm=self._llm,
+                initial_plan_prompt=_INITIAL_PLAN_PROMPT,
+                plan_refine_prompt=_PLAN_REFINE_PROMPT,
+            )
 
     
-    def run(self, output_dir: str, data_scenario: str = None, examples_dir: List[str] = None):
-
-        self._set_scenario(data_scenario=data_scenario, examples_dir=examples_dir)
+    def generate(self, data_scenario: str = None, examples_dir: List[str] = None):
 
         if not self._is_spawned:
             self.spawn()
+        
+        self.set_scenario(data_scenario=data_scenario, examples_dir=examples_dir)
 
-        data_scenario = data_scenario or "Make up whatever you want!"
-        response = self._agent._generate(_PLOTGEN_PROMPT.format(output_dir=output_dir, data_scenario=data_scenario))
-
+        response = self._agent.query(self._query_prompt)
         return response
             
 

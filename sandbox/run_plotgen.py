@@ -4,7 +4,7 @@ from plotreader.generator import PlotGenerator
 if __name__ == "__main__":
 
     generator = PlotGenerator(
-        vector_store_path = "/Users/loyalshababo/dev/plotreader/sandbox/storage",
+        storage_dir = "/Users/loyalshababo/dev/plotreader/sandbox/storage",
            
     )
     generator.run(

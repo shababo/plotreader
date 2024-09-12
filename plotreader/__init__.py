@@ -6,13 +6,13 @@ from llama_index.embeddings.openai import OpenAIEmbedding
 from llama_index.llms.anthropic import Anthropic
 from llama_index.core import Settings
 
-_EMBEDDING_MODEL = "text-embedding-ada-002"
+_DEFAULT_EMBEDDING_MODEL = "text-embedding-ada-002"
 # Settings.llm = Anthropic(model='claude-3-5-sonnet-20240620', max_tokens=2048)
 # Settings.llm = Anthropic(model='claude-3-opus-20240229', max_tokens=2048)
 Settings.llm = OpenAI(model="gpt-4o")
 
 # Settings.llm = OpenAI(model="gpt-4o", max_tokens = 2048)
-Settings.embed_model = OpenAIEmbedding(model=_EMBEDDING_MODEL)
+Settings.embed_model = OpenAIEmbedding(model=_DEFAULT_EMBEDDING_MODEL)
 
 import logging
 import sys
