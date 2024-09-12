@@ -94,7 +94,7 @@ class PlotGenerator():
             # build agent   
             tool_agent_worker = FunctionCallingAgentWorker.from_tools(
                 tools,
-                # llm=Anthropic(model='claude-3-5-sonnet-20240620', max_tokens=2048, temperature=0.1),
+                llm=self._llm,
                 verbose=True,
                 max_function_calls=5
             )
@@ -116,8 +116,8 @@ class PlotGenerator():
         
         self.set_scenario(data_scenario=data_scenario, examples_dir=examples_dir)
 
-        # response = self._agent.query(self._query_prompt)
-        # return response
+        response = self._agent.query(self._query_prompt)
+        return response
             
 
 
