@@ -1,10 +1,7 @@
-from typing import Union, List, Any
+from typing import List, Any
 import os
-from pathlib import Path
 
 from llama_index.core import Settings
-from llama_index.llms.anthropic import Anthropic
-from llama_index.core.tools import QueryEngineTool, ToolMetadata
 from llama_index.tools.code_interpreter.base import CodeInterpreterToolSpec
 from llama_index.core.agent import StructuredPlannerAgent, FunctionCallingAgentWorker
 
@@ -49,7 +46,10 @@ class PlotGenerator():
         self._query_prompt = _PLOTGEN_PROMPT.format(output_dir=gen_output_dir, data_scenario=data_scenario)
 
         examples_dir = examples_dir or self._examples_dir
-        # self._examples_handler = DirectoryHandler()
+        self._examples_handler = DirectoryHandler(
+            name = 'scenario_examples',
+            dirpath = examples_dir,
+        )
 
     def _instantiate_plotting_repo_handlers(self) -> None:
  

@@ -1,6 +1,10 @@
 from dotenv import load_dotenv
 load_dotenv(override=True)
 
+import logging
+import sys
+from datetime import datetime
+
 from llama_index.llms.openai import OpenAI
 from llama_index.embeddings.openai import OpenAIEmbedding
 from llama_index.llms.anthropic import Anthropic
@@ -14,11 +18,10 @@ Settings.llm = Anthropic(model='claude-3-5-sonnet-20240620', max_tokens=2048)
 # Settings.llm = OpenAI(model="gpt-4o", max_tokens = 2048)
 Settings.embed_model = OpenAIEmbedding(model=_DEFAULT_EMBEDDING_MODEL)
 
-import logging
-import sys
+
 
 # generate unique logfile name
-logging.basicConfig(level=logging.DEBUG, filename="logfile", filemode="a+",
+logging.basicConfig(level=logging.DEBUG, filename=f"./logs/logfile_{datetime.now()}", filemode="a+",
                         format="%(asctime)-15s %(levelname)-8s %(message)s")
 
 root = logging.getLogger()
