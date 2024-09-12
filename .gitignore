@@ -1,11 +1,16 @@
 .DS_Store
 .env
+uv.lock
 
+**/__pycache__/**
 **/data/**
 **/storage/**
+**/logs/**
+**/real_figures/**
 
 *.csv
 *.png
 *.json
+*.zip
 
-uv.lock
+
