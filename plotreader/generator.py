@@ -106,7 +106,7 @@ class PlotGenerator():
 
             tools = plotting_repo_tools + examples_tools + code_interpreter_tools
 
-            # build agent   
+            # build tool using agent worker   
             tool_agent_worker = FunctionCallingAgentWorker.from_tools(
                 tools,
                 llm=self._llm,
@@ -114,6 +114,7 @@ class PlotGenerator():
                 max_function_calls=5
             )
 
+            # build the highest level planning agent
             self._agent = StructuredPlannerAgent(
                 tool_agent_worker, 
                 tools=tools, 
@@ -135,7 +136,7 @@ class PlotGenerator():
     def generate(self, data_scenario: str = None, examples_dir: List[str] = None):
         
         self.set_scenario(data_scenario=data_scenario, examples_dir=examples_dir)
-        
+
         return self._generate()
         
             
