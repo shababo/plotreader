@@ -31,10 +31,10 @@ generator.generate(
 ```
 
 Here is an example figure.
-![plot](./real_figures/opsins/opsin_figure_examples.pdf)
+![plot](./docs/images/opsin_figure_examples.pdf)
 
 And here is the output figure.
-![plot](./sandbox/storage/output/opsin_analysis_20240912_170116/opsin_characterization.png)
+![plot](./docs/images/opsin_characterization.png)
 
 Some of the data it saved.
 
