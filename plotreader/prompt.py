@@ -2,6 +2,47 @@ _INITIAL_PLAN_PROMPT = """\
 You will be creating a plan to generate data, plots, and questions about the plots. The plan should end with a sub-task that can achieve the overall task.
 Luckily we have a plan that you can start with. Try to stay as close to this plan as possible!
 
+Example Plan for this task. Only change this plan if necessary or to make it more concise.:
+=== Initial plan ===
+review_examples_and_data_scenario_prompt:
+Read the input prompt and look at the example papers and figures given. 
+In particular, note the the types of information in each figure panel, the type of plot, and something related to the number of data points. 
+If no examples exist, do your best to imagine what they would be given the other inputs.
+-> Summary of a few representatitive figure panels with information about what they plot and how they plot it.
+deps: []
+
+
+create_panel_idea:
+Generate an idea for a panel that would look like it came from the examples or data scenario.
+Ensure that you can generate data for the panel that has realistic structure.
+Choose the most data rich and sophisticated plot that would be appropriate.
+-> Detailed description of the data and plot.
+deps: [review_examples_and_data_scenario_prompt]
+
+
+determine_how_to_plot:
+Determine how we are going to plot the data using Seaborn and/or Matplotlib.
+Make sure to review how to stype these types of plots.
+-> Description of how to make plot programmatically.
+deps: [create_panel_idea]
+
+
+determine_how_to_generate_data:
+Determine how to generate realistic data.
+If provided, you could extract information from the example figures or papers and maniuplate or recombine that.
+-> Desciption of how to generate data.
+deps: [determine_how_to_plot]
+
+generate_data_and_plot:
+Generate the data and plot. Save them to a unique directory in the output directory provided in the instructions.
+-> Confirmation of file saving and the location of the files.
+deps: [determine_how_to_generate_data]
+"""
+
+xx_INITIAL_PLAN_PROMPT = """\
+You will be creating a plan to generate data, plots, and questions about the plots. The plan should end with a sub-task that can achieve the overall task.
+Luckily we have a plan that you can start with. Try to stay as close to this plan as possible!
+
 When writing prompts and thinking through things, be AS CONCISE AS POSSIBLE. You only need to make some data.
 Avoid plots that are mostly noise.
 Rely on Seaborn for styling and plotting as much as possible.
@@ -18,7 +59,7 @@ DO NOT FOCUS ON EXPLAINING THE UNDERLYING BIOLOGY OR WHAT THE DATA MEANS!
 In particular, you could use the data extracted from the examples and maniuplate it to generate similar plots.
 Alternatively, you could think of a mathematical model to generate the data so it can some effect and not just be noise.
 Multiple panels are okay and encouraged. Think about the types of figures one sees in academic papers. -> A description of the data and how it will be generated, and description of each plot.
-deps:[]
+deps: []
 
 
 generate_data:
@@ -33,7 +74,8 @@ deps: ['create_data_scenario']
 
 create_plot:
 Create a plot using the generated data by appending new code to the code generated from the previous step. 
-Make sure that the stylistic choices are optimzed for the quantitative display of information. 
+Create plots similar to the exmaple figures in terms of style, amount of information, and types information.
+When possible, use types of plots where statistics other than the mean are available (violin, box and whisker, errobar, etc.).
 The plots should be information rich but not overwhelming. Rely on Seaborn as much as possible. 
 Do not save anything. Return the new code. -> The data generation code and plotting code in one script.
 deps: ['generate_data']
