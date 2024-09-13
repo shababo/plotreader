@@ -5,7 +5,6 @@ from llama_index.core import Settings
 from llama_index.tools.code_interpreter.base import CodeInterpreterToolSpec
 from llama_index.core.agent import StructuredPlannerAgent, FunctionCallingAgentWorker
 from llama_index.core.tools import QueryEngineTool
-from llama_index.packs.agents_coa import CoAAgentPack, CoAAgentWorker
 
 from plotreader.prompt import _INITIAL_PLAN_PROMPT, _PLAN_REFINE_PROMPT, _PLOTGEN_PROMPT, _DEFAULT_SCENARIO
 from plotreader.document import GitHubRepoHandler, DirectoryHandler
@@ -114,26 +113,22 @@ class PlotGenerator():
             tools = plotting_repo_tools + examples_tools + code_interpreter_tools
 
             # build tool using agent worker   
-            # tool_agent_worker = FunctionCallingAgentWorker.from_tools(
-            #     tools,
-            #     llm=self._llm,
-            #     verbose=True,
-            #     max_function_calls=5,
-            # )
-
-            coa_worker = CoAAgentWorker.from_tools(tools=tools, llm=Settings.llm)
+            tool_agent_worker = FunctionCallingAgentWorker.from_tools(
+                tools,
+                llm=self._llm,
+                verbose=True,
+                max_function_calls=5,
+            )
 
             # build the high level planning agent
             self._agent = StructuredPlannerAgent(
-                coa_worker, 
+                tool_agent_worker, 
                 tools=tools, 
                 verbose=True, 
                 llm=self._llm,
                 initial_plan_prompt=_INITIAL_PLAN_PROMPT,
                 plan_refine_prompt=_PLAN_REFINE_PROMPT,
             )
-
-            
 
     def _generate(self):
 

@@ -12,7 +12,9 @@ Example Plan for this task. Only change this plan if necessary or to make it mor
 === Initial plan ===
 create_data_scenario:
 Look at the provided data scenario text and use the examples tool to review the input examples. 
-Then think of a figure idea and way to generate the data to create it.
+Then think of a figure idea based on that input and way to generate the data to create it.
+When describing things, focus on the data, its structure, and how to plot it.
+DO NOT FOCUS ON EXPLAINING THE UNDERLYING BIOLOGY OR WHAT THE DATA MEANS!
 In particular, you could use the data extracted from the examples and maniuplate it to generate similar plots.
 Alternatively, you could think of a mathematical model to generate the data so it can some effect and not just be noise.
 Multiple panels are okay and encouraged. Think about the types of figures one sees in academic papers. -> A description of the data and how it will be generated, and description of each plot.
@@ -20,17 +22,27 @@ deps:[]
 
 
 generate_data:
-Create corresponding data. Generate only the information used to make the plots, not raw data. That is, no analysis or processing should be needed to generate the plots from the data.  Do not save anything. Return the code for generating the data in your message.  -> Code for generating the data.
+Create corresponding data. Generate only the information used to make the plots, not raw data. 
+That is, no analysis or processing should be needed to generate the plots from the data. Remember, you could use the data extracted from the examples and maniuplate it to generate similar plots. 
+In particular, you could use the data extracted from the examples and maniuplate it to generate similar plots.
+Alternatively, you could think of a mathematical model to generate the data so it can some effect and not just be noise.
+Ensure the structure of the data makes sense from a physical or biological perspective.
+Do not save anything. Return the code for generating the data in your message.  -> Code for generating the data.
 deps: ['create_data_scenario']
 
 
 create_plot:
-Create a plot using the generated data by appending new code to the code generated from the previous step. Make sure that the stylistic choices are optimzed for the quantitative display of information. The plots should be information rich but not overwhelming. Rely on Seaborn as much as possible. Do not save anything. Return the new code. -> The data generation code and plotting code in one script.
+Create a plot using the generated data by appending new code to the code generated from the previous step. 
+Make sure that the stylistic choices are optimzed for the quantitative display of information. 
+The plots should be information rich but not overwhelming. Rely on Seaborn as much as possible. 
+Do not save anything. Return the new code. -> The data generation code and plotting code in one script.
 deps: ['generate_data']
 
 
 generate_questions_and_answers:
-Generate three quantitative questions and answers based on the data which can be answered by looking at the plot. These questions should not involve any computation that a human couldn't do fairly easily in their head while looking at the figure. There should be any easy, medium, and hard difficulty question.  -> The previous script with a new section at the end which generates the questions, answeres, and difficulty scores.
+Generate three quantitative questions and answers based on the data which can be answered by looking at the plot. 
+These questions should not involve any computation that a human couldn't do fairly easily in their head while looking at the figure. 
+There should be any easy, medium, and hard difficulty question.  -> The previous script with a new section at the end which generates the questions, answeres, and difficulty scores.
 deps: ['create_plot']
 
 
@@ -40,7 +52,8 @@ deps: ['generate_questions_and_answers']
 
 
 save_files:
-Save the generated data to a CSV file in the unique directory within the specified root save folder in the intitial prompt. Do this by adding code to the scipt we've been working to save the figure, data, and questions each to their own file. -> Confirmation that the final script has been run and that the files have been saved.
+Save the generated data to a CSV file in the unique directory within the specified root save folder in the intitial prompt. 
+Do this by adding code to the scipt we've been working to save the figure, data, and questions each to their own file. -> Confirmation that the final script has been run and that the files have been saved.
 deps: ['review_code']
 
 
@@ -72,10 +85,11 @@ There should not be a need to do this. Keep the plan as is.
 But also, remember these important points when working. Feel free to remind yourself.
 
 When writing prompts and thinking through things, be AS CONCISE AS POSSIBLE. You only need to make some data. You don't need to go on at length about the biological details. Only include what's absolutely necessary to generate good figures and data.
+Use data from the examples to generate new data if examples are provided.
 Avoid plots that are mostly noise.
 Rely on Seaborn for styling and plotting as much as possible.
 Don't save any files until you are absolutely read to save the final files and save them in the appropriate place!!
 Avoiding opening or "showing" figures.
 """
 
-_DEFAULT_SCENARIO = "Make up whatever you want!"
+_DEFAULT_SCENARIO = "Randomly come up with five biological or biotech data scenarios and choose one."
