@@ -42,11 +42,11 @@ Two of the example figures it was given.
 
 ### Output
 
-#### Figure
+#### Generated Figure
 
 ![plot](./docs/images/opsin_characterization.png)
 
-## Questions
+#### Generated Questions
 The questions were saved into a `.json` file as
 ```JSON
 [
@@ -68,7 +68,7 @@ The questions were saved into a `.json` file as
 ]
 ```
 
-#### Data
+#### Generated Data
 Three `.csv` files were generated that contain the data used to create the figure.
 
 Light intensity response:
