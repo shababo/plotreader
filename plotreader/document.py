@@ -111,13 +111,15 @@ class DocumentHandler(ABC):
 
 
 class DirectoryHandler(DocumentHandler):
-    
+
+    _DEFAULT_PARSING_INSTRUCTION = "Please extract all infor"    
     def __init__(
             self,
             name: str,
             dirpath: str,
             storage_dir: str,
             desc: str,
+            parsing_instructions: str = None
     ):
         super().__init__(
             name=name,
@@ -126,12 +128,12 @@ class DirectoryHandler(DocumentHandler):
         )
 
         self._dirpath = dirpath
+
         parser = LlamaParse(
             result_type="markdown",
-            parsing_instruction=f"You are given documents with the following description: {self.desc}",
+            parsing_instruction=parsing_instructions,
             use_vendor_multimodal_model=True,
-            vendor_multimodal_model_name='claude-3-5-sonnet-20240620',
-            show_progress=True,
+            vendor_multimodal_model_name='anthropic-sonnet-3.5',
         )
         file_extractor =  {".pdf": parser}
         self._dir_reader = SimpleDirectoryReader(input_dir=self._dirpath, file_extractor=file_extractor)

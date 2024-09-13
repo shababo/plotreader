@@ -3,21 +3,27 @@ You will be creating a plan to generate data, plots, and questions. Think step-b
 Keep in mind not every task needs to be decomposed into multiple sub-tasks if it is simple enough.
 The plan should end with a sub-task that can achieve the overall task. Luckily we have a plan that you can start with. Try to stay as close to this plan as possible!
 
+When writing prompts and thinking through things, be AS CONCISE AS POSSIBLE. You only need to make some data. You don't need to go on at length about the biological details. Only include what's absolutely necessary to generate good figures and data.
+Avoid plots that are mostly noise.
+Rely on Seaborn for styling and plotting as much as possible.
+Don't save any files until you are absolutely read to save the final files and save them in the appropriate place!!
+Avoiding opening or "showing" figures.
+
 Example Plan for this task. Only change this plan if it seems absolutely necessary.:
 === Initial plan ===
-generate_scenario_and_figure_idea:
-Generate a scenario and describe the data and how it will be plotted in the figure. Make sure you have some mathematical model to generate the data so it can some effect and not just be noise. Multiple panels are okay and encouraged. Think about the types of figures one sees in academic papers. The final product should look like those. -> A description of the scenario and the figure.
-deps: []
+create_data_scenario:
+Look at the provided data scenario text and use the examples tool to review the input examples. Then think of a figure idea and way to generate the data to create it. Make sure you have some mathematical model to generate the data so it can some effect and not just be noise. Multiple panels are okay and encouraged. Think about the types of figures one sees in academic papers. The final product should look like those. -> A description of the scenario and the figure.
+deps:[]
 
 
-review_details_and_rules:
-Confirm that the plan follows all of the details and rules given. -> A description of the scenario and the figure.
-deps:['generate_scenario_and_figure_idea']
+review_data_scenario:
+Review the initial instructions and details and ensure the data scenario and figure idea are of high quality. Make any necessary revisions. -> Revised data scenario and figure idea.
+deps: ['create_data_scenario']
 
 
 generate_data:
-Create corresponding data. Remember there shouldn't be any extra data. Only what is used to make the plot. If you need to save anything, put it in a tmp folder. -> A pandas DataFrame with the generated data.
-deps: ['review_details_and_rules']
+Create corresponding data. Remember there shouldn't be any extra data. Only what is used to make the plot. You don't have to generate the source data, just the data directly used to make the figure. If you need to save anything, put it in a tmp folder.  -> A pandas DataFrame with the generated data.
+deps: ['review_data_scenario']
 
 
 create_matplotlib_plot:
@@ -25,9 +31,14 @@ Create a Matplotlib plot using the generated data. Make sure that the stylistic 
 deps: ['generate_data']
 
 
+review_plot:
+Ensure the pot looks professional and well styled. Revise if necessary. -> A revised figure object.
+deps: ['create_matplotlib_plot']
+
+
 generate_questions_and_answers:
 Generate three quantitative questions and answers based on the data which can be answered by looking at the plot. These questions should not involve any computation that a human couldn't do fairly easily in their head while looking at the figure. There should be any easy, medium, and hard difficulty question. If you need to save anything, put it in a tmp folder. -> A pandas dataframe of three questions, their difficulty, and their corresponding answers
-deps: ['create_matplotlib_plot']
+deps: ['review_plot']
 
 
 create_directory:
@@ -56,6 +67,7 @@ _PLOTGEN_PROMPT = (
         "The name of this directory should have the same prefix name as the saved files. " +
         "First, you want to make up some scenario related to the biological sciences and data that is represented in the plot. " +
         "Here is some text that could help you think of the type of data and plot create: {data_scenario}. " + 
+        "There may also be some provided example papers and figures related to the data scenario. " +
         "Be sure to make up specific names for everything that are plausible. " +
         "Next, save the data into a single CSV. " +
         "Then you want to plot this data using Matplotlib, but don't put quantitative labels on the plot if they are already available visually. " +
@@ -70,6 +82,16 @@ _PLOTGEN_PROMPT = (
         "You also should only ever write each file one time."
     )
 
-_PLAN_REFINE_PROMPT = "There should not be a need to do this. Keep the plan as is."
+_PLAN_REFINE_PROMPT = """
+There should not be a need to do this. Keep the plan as is.
+
+But also, remember these important points when working. Feel free to remind yourself.
+
+When writing prompts and thinking through things, be AS CONCISE AS POSSIBLE. You only need to make some data. You don't need to go on at length about the biological details. Only include what's absolutely necessary to generate good figures and data.
+Avoid plots that are mostly noise.
+Rely on Seaborn for styling and plotting as much as possible.
+Don't save any files until you are absolutely read to save the final files and save them in the appropriate place!!
+Avoiding opening or "showing" figures.
+"""
 
 _DEFAULT_SCENARIO = "Make up whatever you want!"

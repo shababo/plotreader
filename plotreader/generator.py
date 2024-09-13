@@ -40,7 +40,7 @@ class PlotGenerator():
             self.spawn()
 
     def set_scenario(self, data_scenario: str = None, examples_dir: str = None) -> None:
-
+        
         data_scenario = data_scenario or self._default_data_scenario
         gen_output_dir = os.path.join(self._storage_dir,'output')
         
@@ -49,11 +49,13 @@ class PlotGenerator():
         examples_dir = examples_dir or self._examples_dir
         self._examples_handler = None
         if examples_dir is not None:
+
             self._examples_handler = DirectoryHandler(
-                name = 'data_scenario_figure_examples',
-                desc = f'Papers and/or figures related to the given data scenario. Data scenario: {data_scenario}',
+                name = f"{os.path.basename(examples_dir)}_examples",
+                desc = f'Papers and/or figures related to the target data scenario.',
                 dirpath = examples_dir,
-                storage_dir=os.path.join(self._storage_dir,'indexes/examples')
+                storage_dir=os.path.join(self._storage_dir,'indexes/examples'),
+                parsing_instructions="Papers and/or figures related to the target data scenario. Extract as much information and describe them so someone could potentially simulate new data and plot similiar figures."
             )
             self.spawn(force_respawn=True)
         
@@ -111,10 +113,10 @@ class PlotGenerator():
                 tools,
                 llm=self._llm,
                 verbose=True,
-                max_function_calls=5
+                max_function_calls=3,
             )
 
-            # build the highest level planning agent
+            # build the high level planning agent
             self._agent = StructuredPlannerAgent(
                 tool_agent_worker, 
                 tools=tools, 
