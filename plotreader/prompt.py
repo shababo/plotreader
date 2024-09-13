@@ -16,14 +16,19 @@ create_panel_idea:
 Generate an idea for a panel that would look like it came from the examples or data scenario.
 Ensure that you can generate data for the panel that has realistic structure.
 Choose the most data rich and sophisticated plot that would be appropriate.
+Create plots similar to the exmaple figures in terms of style, amount of information, and types information.
+When possible, use types of plots where statistics other than the mean are available (violin, box and whisker, errobar, etc.).
 -> Detailed description of the data and plot.
 deps: [review_examples_and_data_scenario_prompt]
 
 
 determine_how_to_plot:
 Determine how we are going to plot the data using Seaborn and/or Matplotlib.
-Make sure to review how to stype these types of plots.
--> Description of how to make plot programmatically.
+When possible, use types of plots where statistics other than the mean are available (violin, box and whisker, errobar, etc.).
+Seaborn is particularly useful when adding statistics into plots, like errorbars or fills or scatters of individual data points with lines going through means, etc.
+The plots should be information rich but not overwhelming. Rely on Seaborn as much as possible. 
+Ensure a consistant styling and labeling scheme throughout.
+-> Description of how to make plots programmatically.
 deps: [create_panel_idea]
 
 
@@ -63,8 +68,8 @@ deps: []
 
 
 generate_data:
-Create corresponding data. Generate only the information used to make the plots, not raw data. 
-That is, no analysis or processing should be needed to generate the plots from the data. Remember, you could use the data extracted from the examples and maniuplate it to generate similar plots. 
+Create corresponding data. Generate only the information used to make the plots. 
+Remember, you could use the data extracted from the examples and maniuplate it to generate similar plots. 
 In particular, you could use the data extracted from the examples and maniuplate it to generate similar plots.
 Alternatively, you could think of a mathematical model to generate the data so it can some effect and not just be noise.
 Ensure the structure of the data makes sense from a physical or biological perspective.
@@ -76,7 +81,9 @@ create_plot:
 Create a plot using the generated data by appending new code to the code generated from the previous step. 
 Create plots similar to the exmaple figures in terms of style, amount of information, and types information.
 When possible, use types of plots where statistics other than the mean are available (violin, box and whisker, errobar, etc.).
+Seaborn is particularly useful when adding statistics into plots, like errorbars or fills or scatters of individual data points with lines going through means, etc.
 The plots should be information rich but not overwhelming. Rely on Seaborn as much as possible. 
+Ensure a consistant styling and labeling scheme throughout.
 Do not save anything. Return the new code. -> The data generation code and plotting code in one script.
 deps: ['generate_data']
 
@@ -111,14 +118,14 @@ _PLOTGEN_PROMPT = (
         "Here is some text that could help you think of the type of data and plot create: {data_scenario}. " + 
         "There may also be some provided example papers and figures related to the data scenario. " +
         "Then you want to plot this data using Seaborn and Matplotlib, but don't put quantitative labels on the plot if they are already available visually. " +
-        "The plots should have the same amount of labeling you'd expect in an academic paper. Save the figure as a PNG. " +
-        "Lastly, write three quantitative questions that could only be answered if the responder was able to understand the quantitative information in the plots. " +
-        "Save these questions and answers in a new CSV file where the columns are `question` and `answer` and `difficulty`. " +
-        "There should be an easy, medium, and hard difficulty question. " +
-        "Don't forget the following important details: \n" +
-        "   1. The files are saved in a unique drectory in {output_dir}.\n" +
-        "   2. Make sure the plot you are generating is unique by generating data in a random manner.\n" +
-        "   3. All data in the saved structures should be in the plots. Do not include extra data. \n"
+        "The plot should have the same amount of labeling you'd expect in an academic paper. Save the figure as a PNG. "
+        # "Lastly, write three quantitative questions that could only be answered if the responder was able to understand the quantitative information in the plots. " +
+        # "Save these questions and answers in a new CSV file where the columns are `question` and `answer` and `difficulty`. " +
+        # "There should be an easy, medium, and hard difficulty question. " +
+        # "Don't forget the following important details: \n" +
+        # "   1. The files are saved in a unique drectory in {output_dir}.\n" +
+        # "   2. Make sure the plot you are generating is unique by generating data in a random manner.\n" +
+        # "   3. All data in the saved structures should be in the plots. Do not include extra data. \n"
     )
 
 _PLAN_REFINE_PROMPT = """

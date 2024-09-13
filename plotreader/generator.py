@@ -90,6 +90,20 @@ class PlotGenerator():
             language = 'python'
         )
 
+    def _instantiate_docs_handlers(self) -> None:
+
+        self._plotting_docs = {}
+        self._plotting_repos['matplotlib'] = GitHubRepoHandler(
+            name = 'matplotlib_galleries',
+            repo = 'matplotlib',
+            owner = 'matplotlib',
+            desc = 'All of the code for the Matplotlib galleries.',
+            storage_dir = os.path.join(self._storage_dir,'indexes'),
+            include_dirs = ['galleries'],
+            include_exts = ['.py'],
+            language = 'python'
+        )
+
     def _get_plotting_repo_tools(self) -> List[QueryEngineTool]:
 
         return [handler.query_engine_tool() for handler_name, handler in self._plotting_repos.items()]

@@ -82,7 +82,7 @@ class DocumentHandler(ABC):
     def query_engine(self, top_k: int = _DEFAULT_RETRIEVAL_K) -> Any:
         "Return a Query Engine for this document."
         
-        return self.vector_index.as_query_engine(similarity_top_k=top_k)
+        return self.vector_index().as_query_engine(similarity_top_k=top_k)
     
     
     def query_engine_tool(self, top_k: int = _DEFAULT_RETRIEVAL_K) -> QueryEngineTool:
