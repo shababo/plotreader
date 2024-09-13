@@ -7,7 +7,7 @@ uv.lock
 **/storage/**
 **/logs/**
 **/real_figures/**
-
+**/tmp/**
 *.csv
 *.png
 *.json
