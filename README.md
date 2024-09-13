@@ -31,7 +31,7 @@ generator.generate(
 ```
 
 Here is an example figure.
-![plot](./docs/images/Screen Shot 2024-09-11 at 2.48.55 PM.png)
+![plot](./docs/images/exampel_figure.png)
 
 And here is the output figure.
 ![plot](./docs/images/opsin_characterization.png)
