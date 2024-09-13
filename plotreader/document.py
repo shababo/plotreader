@@ -65,9 +65,8 @@ class DocumentHandler(ABC):
         return vec_index
 
     @property
-    @abstractmethod
     def node_parser(self):
-        pass
+        return None
 
     def _build_vec_index(self, docs: List[Document], node_parser: NodeParser = None):
         

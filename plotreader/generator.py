@@ -53,6 +53,7 @@ class PlotGenerator():
                 name = 'data_scenario_figure_examples',
                 desc = f'Papers and/or figures related to the given data scenario. Data scenario: {data_scenario}',
                 dirpath = examples_dir,
+                storage_dir=os.path.join(self._storage_dir,'indexes/examples')
             )
             self.spawn(force_respawn=True)
         
@@ -91,6 +92,8 @@ class PlotGenerator():
 
         if self._examples_handler is not None:
             return [self._examples_handler.query_engine_tool()]
+        
+        return []
 
     
     def spawn(self, force_respawn: bool = False) -> None:
@@ -120,16 +123,21 @@ class PlotGenerator():
                 plan_refine_prompt=_PLAN_REFINE_PROMPT,
             )
 
-    
-    def generate(self, data_scenario: str = None, examples_dir: List[str] = None):
+    def _generate(self):
 
         if not self._is_spawned:
             self.spawn()
-        
-        self.set_scenario(data_scenario=data_scenario, examples_dir=examples_dir)
 
         response = self._agent.query(self._query_prompt)
         return response
+    
+
+    def generate(self, data_scenario: str = None, examples_dir: List[str] = None):
+        
+        self.set_scenario(data_scenario=data_scenario, examples_dir=examples_dir)
+        
+        return self._generate()
+        
             
 
 
