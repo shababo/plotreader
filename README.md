@@ -225,10 +225,3 @@ Spectral Senitivity:
 |595               |ChRger3              |0.012028281956512912   |
 |600               |ChRger3              |0.008331747403681729   |
 
-
-And finally, the questions:
-|difficulty        |question             |answer            |
-|------------------|---------------------|------------------|
-|Easy              |Which opsin has its peak spectral sensitivity at the longest wavelength?|Opsin-C has its peak spectral sensitivity at the longest wavelength, around 590 nm.|
-|Medium            |Approximately how many times longer is the deactivation time constant (τ_off) compared to the activation time constant (τ_on) for WT-ChR?|The deactivation time constant (τ_off) for WT-ChR is approximately 10 times longer than its activation time constant (τ_on).|
-|Hard              |At what approximate light intensity (in mW/mm²) does Opsin-A reach half of its maximum photocurrent response?|Opsin-A reaches approximately half of its maximum photocurrent response at a light intensity of about 1-2 mW/mm².|
