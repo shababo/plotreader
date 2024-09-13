@@ -12,7 +12,9 @@ Use this agent to train another agent to extract quantitative information from f
 
 ## Results
 
-So far I have only implemented the generating agent. Here is an example of it working:
+So far I have only implemented the generating agent. Here is an example of some input and output.
+
+### Input
 
 Prompt with both text and example figures.
 ```Python
@@ -30,13 +32,17 @@ generator.generate(
 )
 ```
 
-Here is an example figure.
+An example figure it was given.
+
 ![plot](./docs/images/example_figure.png)
 
-And here is the output figure.
+### Output
+
+#### Figure
+
 ![plot](./docs/images/opsin_characterization.png)
 
-Some of the data it saved.
+#### Data
 
 Light intensity response:
 |FIELD1            |WT-ChR               |Opsin-A           |Opsin-B           |Opsin-C           |
