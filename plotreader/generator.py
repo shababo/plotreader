@@ -55,7 +55,11 @@ class PlotGenerator():
                 desc = f'Papers and/or figures related to the target data scenario.',
                 dirpath = examples_dir,
                 storage_dir=os.path.join(self._storage_dir,'indexes/examples'),
-                parsing_instructions="Papers and/or figures related to the target data scenario. Extract as much information and describe them so someone could potentially simulate new data and plot similiar figures."
+                parsing_instructions="""
+                Papers and/or figures related to the target data scenario. Extract as much information and describe them so someone could potentially simulate new data and plot similiar figures.
+                Attempt to extract all of the quantitative information from these figures including the values used to generate lines and other visual information. 
+                Attempt to estimate the values at each plotted point (not interpolated points). Return tables of the values only.
+                """
             )
             self.spawn(force_respawn=True)
         
@@ -113,7 +117,7 @@ class PlotGenerator():
                 tools,
                 llm=self._llm,
                 verbose=True,
-                max_function_calls=3,
+                max_function_calls=5,
             )
 
             # build the high level planning agent

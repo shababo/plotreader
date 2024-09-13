@@ -21,6 +21,7 @@ dependencies = [
     "datasets>=3.0.0",
     "matplotlib>=3.9.2",
     "seaborn>=0.13.2",
+    "scipy>=1.14.1",
 ]
 
 [build-system]

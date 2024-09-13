@@ -112,7 +112,7 @@ class DocumentHandler(ABC):
 
 class DirectoryHandler(DocumentHandler):
 
-    _DEFAULT_PARSING_INSTRUCTION = "Please extract all infor"    
+    # _DEFAULT_PARSING_INSTRUCTION = "Please extract all infor"    
     def __init__(
             self,
             name: str,
