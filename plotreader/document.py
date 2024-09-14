@@ -38,11 +38,13 @@ class DocumentHandler(ABC):
         name: str,
         desc: str,
         storage_dir: str,
-        # embedding_model: str = _DEFAULT_EMBEDDING_MODEL
+        # embedding_model: str = _DEFAULT_EMBEDDING_MODEL,
+        use_cache: bool = True,
     ):
         self.name = name
         self.desc = desc
         self.storage_dir = storage_dir
+        self._use_cache = use_cache
 
         self._reader = self.get_reader()
 
@@ -67,10 +69,12 @@ class DocumentHandler(ABC):
             self, 
             node_parser: NodeParser = None, 
             save: bool = True, 
-            use_cache: bool = True
+            use_cache: bool = None,
         ) -> VectorStoreIndex:
         "Return a Vector Index for this document."
         
+        use_cache = use_cache or self._use_cache
+
         save_dir = os.path.join(self.storage_dir, self.name)
         cache_exists = self._index_files_in_dir(save_dir)
 
@@ -144,7 +148,8 @@ class DirectoryHandler(DocumentHandler):
             dirpath: str,
             storage_dir: str,
             desc: str,
-            parsing_instructions: str = None
+            parsing_instructions: str = None,
+            **kwargs,
     ):
         
         self._parsing_instructions = parsing_instructions
@@ -154,6 +159,7 @@ class DirectoryHandler(DocumentHandler):
             name=name,
             storage_dir=storage_dir,
             desc=desc,
+            **kwargs,
         )
 
     def get_parser(self):
