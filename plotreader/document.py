@@ -26,7 +26,7 @@ from llama_index.core.prompts import PromptTemplate
 from llama_index.core.base.response.schema import Response
 from typing import Optional
 
-from plotreader import _DEFAULT_EMBEDDING_MODEL
+from plotreader import _DEFAULT_EMBEDDING_MODEL, _MM_LLM
 
 _DEFAULT_RETRIEVAL_K = 5
 
@@ -204,14 +204,17 @@ class MultimodalQueryEngine(CustomQueryEngine):
     Also takes in a prompt template and multimodal model.
 
     """
-
     qa_prompt: PromptTemplate
     retriever: BaseRetriever
-    multi_modal_llm: OpenAIMultiModal
+    multi_modal_llm: Any
 
-    def __init__(self, qa_prompt: Optional[PromptTemplate] = None, **kwargs) -> None:
+    def __init__(self,  
+                 qa_prompt: Optional[PromptTemplate] = None,
+                 **kwargs
+        ) -> None:
         """Initialize."""
-        super().__init__(qa_prompt=qa_prompt or MM_PROMPT, **kwargs)
+
+        super().__init__(qa_prompt=qa_prompt or MM_PROMPT,  **kwargs)
 
     def custom_query(self, query_str: str):
         # retrieve text nodes
@@ -277,18 +280,23 @@ class MultimodalDirectoryHandler(DirectoryHandler):
 
         return docs
     
+    def query_engine(self, top_k: int = _DEFAULT_RETRIEVAL_K) -> Any:
+        "Return a Query Engine for this document."
+        
+        return MultimodalQueryEngine(
+                    retriever=self.vector_index().as_retriever(similarity_top_k=top_k), 
+                    multi_modal_llm=_MM_LLM, 
+                    similarity_top_k=top_k
+                )
+    
     def query_engine_tool(self, top_k: int = _DEFAULT_RETRIEVAL_K) -> QueryEngineTool:
         "Return a Tool that can query this document."
         
         return QueryEngineTool(
-                query_engine=MultimodalQueryEngine(
-                    retriever=self.vector_index().as_retriever(similarity_top_k=9), 
-                    multi_modal_llm=Settings.llm, 
-                    similarity_top_k=top_k
-                ),
+                query_engine=self.query_engine(),
                 metadata=ToolMetadata(
-                    name=f"{self.name}_vector_tool",
-                    description=f"This tool can query these documents: {self.desc}.",
+                    name=f"{self.name}_multimodal_vector_tool",
+                    description=f"This tool can query these documents which may include images: {self.desc}.",
                 ),
             )
     
