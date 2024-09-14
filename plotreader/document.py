@@ -11,12 +11,20 @@ from llama_index.core import (
     load_index_from_storage,
     StorageContext,
     Document,
-    SimpleDirectoryReader
+    SimpleDirectoryReader,
+    Settings
 )
 from llama_index.core.tools import QueryEngineTool, ToolMetadata
 from llama_index.readers.github import GithubRepositoryReader, GithubClient
 from llama_index.core.node_parser import CodeSplitter
 from llama_index.core.schema import TextNode
+from llama_index.core.query_engine import CustomQueryEngine, SimpleMultiModalQueryEngine
+from llama_index.core.retrievers import BaseRetriever
+from llama_index.multi_modal_llms.openai import OpenAIMultiModal
+from llama_index.core.schema import ImageNode, NodeWithScore, MetadataMode
+from llama_index.core.prompts import PromptTemplate
+from llama_index.core.base.response.schema import Response
+from typing import Optional
 
 from plotreader import _DEFAULT_EMBEDDING_MODEL
 
@@ -167,6 +175,69 @@ class DirectoryHandler(DocumentHandler):
         return self._reader.load_data()
     
 
+MM_PROMPT_TMPL = """\
+Below we give parsed text from documents in two different formats, as well as related images.
+
+We parse the text in both 'markdown' mode as well as 'raw text' mode. Markdown mode attempts \
+to convert relevant diagrams into tables, whereas raw text tries to maintain the rough spatial \
+layout of the text.
+
+Use the image information first and foremost. ONLY use the text/markdown information 
+if you can't understand the image.
+
+---------------------
+{context_str}
+---------------------
+Given the context information and not prior knowledge, respond the query. Explain whether you got the response 
+from the parsed markdown or raw text or image, and if there's discrepancies, and your reasoning for the final answer.
+
+Query: {query_str}
+Answer: """
+
+MM_PROMPT = PromptTemplate(MM_PROMPT_TMPL)
+
+
+class MultimodalQueryEngine(CustomQueryEngine):
+    """Custom multimodal Query Engine.
+
+    Takes in a retriever to retrieve a set of document nodes.
+    Also takes in a prompt template and multimodal model.
+
+    """
+
+    qa_prompt: PromptTemplate
+    retriever: BaseRetriever
+    multi_modal_llm: OpenAIMultiModal
+
+    def __init__(self, qa_prompt: Optional[PromptTemplate] = None, **kwargs) -> None:
+        """Initialize."""
+        super().__init__(qa_prompt=qa_prompt or MM_PROMPT, **kwargs)
+
+    def custom_query(self, query_str: str):
+        # retrieve text nodes
+        nodes = self.retriever.retrieve(query_str)
+        # create ImageNode items from text nodes
+        image_nodes = [
+            NodeWithScore(node=ImageNode(image_path=n.metadata["image_path"]))
+            for n in nodes
+        ]
+
+        # create context string from text nodes, dump into the prompt
+        context_str = "\n\n".join(
+            [r.get_content(metadata_mode=MetadataMode.LLM) for r in nodes]
+        )
+        fmt_prompt = self.qa_prompt.format(context_str=context_str, query_str=query_str)
+
+        # synthesize an answer from formatted text and images
+        llm_response = self.multi_modal_llm.complete(
+            prompt=fmt_prompt,
+            image_documents=[image_node.node for image_node in image_nodes],
+        )
+        return Response(
+            response=str(llm_response),
+            source_nodes=nodes,
+            metadata={"text_nodes": nodes, "image_nodes": image_nodes},
+        )
 
 
     
@@ -206,12 +277,20 @@ class MultimodalDirectoryHandler(DirectoryHandler):
 
         return docs
     
-    # def _get_text_nodes(self, json_list: List[dict]):
-    #     text_nodes = []
-    #     for idx, page in enumerate(json_list):
-    #         text_node = TextNode(text=page["md"], metadata={"page": page["page"]})
-    #         text_nodes.append(text_node)
-    #     return text_nodes
+    def query_engine_tool(self, top_k: int = _DEFAULT_RETRIEVAL_K) -> QueryEngineTool:
+        "Return a Tool that can query this document."
+        
+        return QueryEngineTool(
+                query_engine=MultimodalQueryEngine(
+                    retriever=self.vector_index().as_retriever(similarity_top_k=9), 
+                    multi_modal_llm=Settings.llm, 
+                    similarity_top_k=top_k
+                ),
+                metadata=ToolMetadata(
+                    name=f"{self.name}_vector_tool",
+                    description=f"This tool can query these documents: {self.desc}.",
+                ),
+            )
     
     def _get_page_number(self, file_name):
         match = re.search(r"-page-(\d+)\.jpg$", str(file_name))
@@ -242,6 +321,7 @@ class MultimodalDirectoryHandler(DirectoryHandler):
             nodes.append(node)
 
         return nodes
+        
 
 
 class GitHubRepoHandler(DocumentHandler):
