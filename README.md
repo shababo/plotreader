@@ -42,12 +42,14 @@ Two of the example figures it was given.
 
 ### Output
 
-#### Generated Figure
+#### Generated Figures
 
-![plot](./docs/images/opsin_characterization.png)
+| Example 1 | Example 2|
+| -- | -- |
+| ![plot](./docs/images/opsin_characterization.png) | ![plot](./docs/images/channelrhodopsin_characterization_realistic.png) |
 
-#### Generated Questions
-The questions were saved into a `.json` file as
+#### Generated Questions (with Output Figure Example 1)
+The questions were saved into a `.json` file 
 ```JSON
 [
   {
@@ -68,7 +70,7 @@ The questions were saved into a `.json` file as
 ]
 ```
 
-#### Generated Data
+#### Generated Data (with Output Figure Example 1)
 Three `.csv` files were generated that contain the data used to create the figure.
 
 Light intensity response:
