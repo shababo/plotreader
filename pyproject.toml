@@ -24,6 +24,8 @@ dependencies = [
     "scipy>=1.14.1",
     "pillow>=10.4.0",
     "llama-index-multi-modal-llms-anthropic>=0.2.2",
+    "transformers>=4.44.2",
+    "torch>=2.4.1",
 ]
 
 [build-system]

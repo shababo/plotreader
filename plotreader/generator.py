@@ -7,7 +7,7 @@ from llama_index.core.agent import StructuredPlannerAgent, FunctionCallingAgentW
 from llama_index.core.tools import QueryEngineTool
 
 from plotreader.prompt import _INITIAL_PLAN_PROMPT, _PLAN_REFINE_PROMPT, _PLOTGEN_PROMPT, _DEFAULT_SCENARIO
-from plotreader.document import GitHubRepoHandler, DirectoryHandler
+from plotreader.document import GitHubRepoHandler, MultimodalDirectoryHandler
 
 # Get the directory this file is in
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -50,7 +50,7 @@ class PlotGenerator():
         self._examples_handler = None
         if examples_dir is not None:
 
-            self._examples_handler = DirectoryHandler(
+            self._examples_handler = MultimodalDirectoryHandler(
                 name = f"{os.path.basename(examples_dir)}_examples",
                 desc = f'Papers and/or figures related to the target data scenario.',
                 dirpath = examples_dir,
@@ -83,7 +83,7 @@ class PlotGenerator():
             repo = 'seaborn',
             owner = 'mwaskom',
             branch = 'master',
-            desc = 'All of the code for the Seaborn examples.',
+            desc = 'All of the code for the Seaborn plotting examples.',
             storage_dir = os.path.join(self._storage_dir,'indexes'),
             include_dirs = ['examples'],
             include_exts = ['.py'],
@@ -97,7 +97,7 @@ class PlotGenerator():
             name = 'matplotlib_galleries',
             repo = 'matplotlib',
             owner = 'matplotlib',
-            desc = 'All of the code for the Matplotlib galleries.',
+            desc = 'All of the code for the Matplotlib plotting examples.',
             storage_dir = os.path.join(self._storage_dir,'indexes'),
             include_dirs = ['galleries'],
             include_exts = ['.py'],

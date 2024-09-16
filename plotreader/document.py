@@ -188,8 +188,7 @@ We parse the text in both 'markdown' mode as well as 'raw text' mode. Markdown m
 to convert relevant diagrams into tables, whereas raw text tries to maintain the rough spatial \
 layout of the text.
 
-Use the image information first and foremost. ONLY use the text/markdown information 
-if you can't understand the image.
+Use all of the information available: the text/markdown and the provided image(s).
 
 ---------------------
 {context_str}
@@ -277,7 +276,10 @@ class MultimodalDirectoryHandler(DirectoryHandler):
 
             json_objs = parser.get_json_result(file)
 
-            image_dicts = parser.get_images(json_objs, download_path="data_images")
+            if len(json_objs) == 0:
+                continue
+
+            image_dicts = parser.get_images(json_objs, download_path=os.path.join(self.storage_dir,"data_images"))
             json_dicts = json_objs[0]["pages"]
 
             # docs_text = text_parser.load_data(file)
