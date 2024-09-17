@@ -1,11 +1,28 @@
-from typing import List
+from typing import List, Dict
 from pydantic import BaseModel, Field
 
-class IndependantVariable(BaseModel):
+
+class ExperimentVariable(BaseModel):
     aliases: List[str]
+    unit: str
+
+class IndependantVariable(ExperimentVariable):
+    values: List[str | float]
+
+class DependantVariableStatistic(ExperimentVariable):
+    pass
+
+class Experiment(BaseModel):
+    independant_vars: List[ExperimentVariable]
+    depdendant_vars: List[ExperimentVariable]
+
+class Panel(BaseModel):
+    experiment: Experiment
+    signifiers: Dict[str]
 
 class Signifier(BaseModel):
-    values: List[str]
+    name: str
+    value_map: Dict[str, ExperimentVariable]
 
 
 class OpsinVariant(BaseModel):

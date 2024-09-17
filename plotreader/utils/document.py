@@ -3,6 +3,8 @@ import re
 from typing import Union, List, Any
 import os
 from pathlib import Path
+import io
+import base64
 
 from llama_parse import LlamaParse
 from llama_cloud import NodeParser
@@ -29,6 +31,23 @@ from typing import Optional
 from plotreader import _DEFAULT_EMBEDDING_MODEL, _MM_LLM
 
 _DEFAULT_RETRIEVAL_K = 5
+
+def image_to_base64(image: Union[str, Any]):
+
+    if isinstance(image, str):
+        with open(image, "rb") as image_file:
+            binary_data = image_file.read()
+        
+    else:
+        # image = image.convert('RGB')
+        image_data = io.BytesIO()
+        image.save(image_data, format='PNG', optimize=True, quality=100)
+        image_data.seek(0)
+        binary_data = image_data.getvalue()
+    
+    
+    base_64_encoded_data = base64.b64encode(binary_data)
+    return base_64_encoded_data.decode('utf-8')
 
 class DocumentHandler(ABC):
     
