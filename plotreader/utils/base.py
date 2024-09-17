@@ -28,12 +28,12 @@ class BasicAnthropicAgent:
 
     def message(self, prompt: str, images: List[Image]) -> Message:
 
-        response = self._api.messages.create(
+        return self._api.messages.create(
             model=self._model,
             max_tokens=self._max_tokens,
             temperature=self._temperature,
             system=self._system_prompt,
-            messages=self._format_message(prompt, images)
+            messages=[self._format_message(prompt, images)]
         )
 
     def _format_message(self, text: str, images: List[Image]) -> Dict:
