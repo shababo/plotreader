@@ -1,4 +1,4 @@
-from typing import List, Any
+from typing import Any
 import os
 
 from llama_index.core import Settings
@@ -6,8 +6,8 @@ from llama_index.tools.code_interpreter.base import CodeInterpreterToolSpec
 from llama_index.core.agent import StructuredPlannerAgent, FunctionCallingAgentWorker
 from llama_index.core.tools import QueryEngineTool
 
-from plotreader.prompt import _INITIAL_PLAN_PROMPT, _PLAN_REFINE_PROMPT, _PLOTGEN_PROMPT, _DEFAULT_SCENARIO
-from plotreader.document import GitHubRepoHandler, MultimodalDirectoryHandler
+from plotreader.generator.prompt import _INITIAL_PLAN_PROMPT, _PLAN_REFINE_PROMPT, _PLOTGEN_PROMPT, _DEFAULT_SCENARIO
+from plotreader.utils.document import GitHubRepoHandler, MultimodalDirectoryHandler
 
 # Get the directory this file is in
 THIS_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -104,11 +104,11 @@ class PlotGenerator():
             language = 'python'
         )
 
-    def _get_plotting_repo_tools(self) -> List[QueryEngineTool]:
+    def _get_plotting_repo_tools(self) -> list[QueryEngineTool]:
 
         return [handler.query_engine_tool() for handler_name, handler in self._plotting_repos.items()]
     
-    def _get_examples_tools(self) -> List[QueryEngineTool]:
+    def _get_examples_tools(self) -> list[QueryEngineTool]:
 
         if self._examples_handler is not None:
             return [self._examples_handler.query_engine_tool()]
@@ -153,7 +153,7 @@ class PlotGenerator():
         return response
     
 
-    def generate(self, data_scenario: str = None, examples_dir: List[str] = None):
+    def generate(self, data_scenario: str = None, examples_dir: list[str] = None):
         
         self.set_scenario(data_scenario=data_scenario, examples_dir=examples_dir)
 

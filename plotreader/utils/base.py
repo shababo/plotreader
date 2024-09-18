@@ -1,4 +1,3 @@
-from typing import List, Dict
 from requests import Response
 from PIL.Image import Image
 
@@ -26,7 +25,7 @@ class BasicAnthropicAgent:
         self._api = anthropic.Anthropic()
 
 
-    def message(self, prompt: str, images: List[Image]) -> Message:
+    def message(self, prompt: str, images: list[Image]) -> Message:
 
         return self._api.messages.create(
             model=self._model,
@@ -36,7 +35,7 @@ class BasicAnthropicAgent:
             messages=[self._format_message(prompt, images)]
         )
 
-    def _format_message(self, text: str, images: List[Image]) -> Dict:
+    def _format_message(self, text: str, images: list[Image]) -> dict:
         
         content = [
                 {

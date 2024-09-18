@@ -1,3 +1,5 @@
+# Plotreader
+
 Use LLMs to generate and read plots. Combine them into a teacher-student pair to improve performance.
 
 ## Problem
@@ -8,13 +10,164 @@ Build a tool that can aggregate information from scientific figures into structu
 
 Design an agent that takes in a data scenario and paper/figure examples and then outputs structured data, the data plotted into a figure, and several quantitative questions about the figure with difficulty rankings.
 
-Use this agent to train another agent to extract quantitative information from figures using something like TextGrad or DSPy.
+For now, I'm prototyping independant plot readers and generators.
 
 ## Results
 
-So far I have only implemented the generating agent. Here is an example of some input and output.
+### Plot Reading
 
-### Input
+Input Figure:
+
+
+![plot](./docs/images/opsin_features_test_w_caption_full_fig.png)
+
+#### Step 1: Extract experiments from figure.
+
+Prompt:
+```Python
+prompt = "For each plot in each panel determine the experiment in terms of independant variables (IVs) and dependant variable (DV)."
+```
+
+Structured Output:
+```
+Panel: a
+	Plot: Current traces
+		independant_variables=['Time', 'ChR variant'] dependant_variables=['Current']
+Panel: b
+	Plot: Photocurrent strength with different wavelength excitation
+		independant_variables=['ChR variant', 'Wavelength', 'Current type (Peak/Steady state)'] dependant_variables=['Photocurrent']
+Panel: c
+	Plot: Off-kinetics decay time
+		independant_variables=['ChR variant'] dependant_variables=['Off-kinetics decay time (τoff)']
+	Plot: Current traces for select variants
+		independant_variables=['Time', 'ChR variant'] dependant_variables=['Current']
+Panel: d
+	Plot: Wavelength sensitivity
+		independant_variables=['Wavelength', 'ChR variant'] dependant_variables=['Normalized photocurrent']
+Panel: e
+	Plot: Peak photocurrent vs Intensity
+		independant_variables=['Light intensity', 'ChR variant'] dependant_variables=['Peak photocurrent']
+	Plot: Steady-state photocurrent vs Intensity
+		independant_variables=['Light intensity', 'ChR variant'] dependant_variables=['Steady-state photocurrent']
+```
+
+#### Step 2: Extract values for independant and dependant variables from a single plot
+
+Prompts:
+```python
+prompt = """In Panel {panel_name}, plot number {plot_ind}, what values are taken by the independant variable {ind_var_name}?
+If the variable is not quantitative (like an image), only set the name field of IndependantVariable.
+Return your answer as structured data.
+""".format(
+    panel_name = figure.panels[panel_ind].name, 
+    plot_ind=plot_ind+1, 
+    ind_var_name = iv
+)
+```
+
+```python
+prompt = """In Panel {panel_name}, plot number {plot_ind}, what statistics used to quantify the deependant variable {dep_var_name} like mean or SEM?
+If the variable is not quantitative (like an image), only set the name field of DependantVariable.
+Return your answer as structured data.
+""".format(
+    panel_name = figure.panels[panel_ind].name, 
+    plot_ind=plot_ind+1, 
+    dep_var_name = dv
+)
+```
+
+Structured Output:
+
+The values for `Wavelength` are not correct. Hoping to resolve this by allowing RAG over full paper.
+
+```
+Panel d, Independant Vars:
+name='Wavelength' values=[400, 450, 500, 550, 600, 650] unit='nm'
+name='ChR variant' values=['ChRger1', 'ChRger2', 'ChRger3', 'ChR_25_9', 'ChR_15_10', 'CsChrimR', 'ChRiff'] unit='None'
+```
+```
+Panel d, Dependant Vars:
+name='Normalized photocurrent' statistics=['mean', 's.e.m.'] unit='None'
+```
+
+Step 3: Extract dependant variable statistics for each condition
+
+Prompt:
+```python
+columns = {iv.name: pd.Series() for iv in ind_vars}
+columns.update({dv.name: pd.Series()})
+df = pd.DataFrame(columns)
+
+prompt = """In Panel {panel_name}, what are the values of the {dep_var_stat} for the dependant variable {dep_var_name}?
+If the variable is not quantitative (like an image), only set the name field of IndependantVariable.
+Get the value for each condition. To help, here are the values the independant variable takes:
+{ind_vars}
+IMPORTANT:
+    THE EXPECTED VALUES FOR THE INDEPENDANT VARIABLES MAY BE INCORRECT. DO YOUR BEST TO ESTIMATE THE VALUE FOR THE INPUTS FROM THE PLOT.
+The column schema is the following: {schema}.
+""".format(
+    panel_name = figure.panels[panel_ind].name, 
+    dep_var_stat = dv.statistics[0],
+    dep_var_name = dv.name,
+    ind_vars = ind_vars,
+    schema = ", ".join(df.columns),
+)
+```
+
+Structured Output:
+```
+   Wavelength ChR variant  Normalized photocurrent
+0         400     ChRger1                     0.48
+1         450     ChRger1                     0.72
+2         500     ChRger1                     1.00
+3         550     ChRger1                     0.85
+4         600     ChRger1                     0.95
+5         650     ChRger1                     0.55
+6         400     ChRger2                     0.45
+7         450     ChRger2                     0.70
+8         500     ChRger2                     0.98
+9         550     ChRger2                     0.75
+10        600     ChRger2                     0.98
+11        650     ChRger2                     0.50
+12        400     ChRger3                     0.92
+13        450     ChRger3                     0.98
+14        500     ChRger3                     0.85
+15        550     ChRger3                     0.48
+16        600     ChRger3                     0.05
+17        650     ChRger3                     0.02
+18        400    ChR_25_9                     0.65
+19        450    ChR_25_9                     0.78
+20        500    ChR_25_9                     0.72
+21        550    ChR_25_9                     0.20
+22        600    ChR_25_9                     0.05
+23        650    ChR_25_9                     0.02
+24        400   ChR_15_10                     0.70
+25        450   ChR_15_10                     0.95
+26        500   ChR_15_10                     0.82
+27        550   ChR_15_10                     0.18
+28        600   ChR_15_10                     0.05
+29        650   ChR_15_10                     0.02
+30        400    CsChrimR                     0.52
+31        450    CsChrimR                     0.50
+32        500    CsChrimR                     0.70
+33        550    CsChrimR                     0.95
+...
+38        500      ChRiff                     0.72
+39        550      ChRiff                     1.00
+40        600      ChRiff                     0.95
+41        650      ChRiff                     0.62
+```
+
+Plotting extracted data:
+
+| Extracted | Source |
+| -- | -- |
+| ![plot](./docs/images/extracted_data_plot.png) | ![plot](./docs/images/original_plot_for_extraction.png) |
+
+
+### Plot Generation
+
+#### Input
 
 Prompt with both text and example figures.
 ```Python
@@ -40,15 +193,15 @@ Two of the example figures it was given.
 
 
 
-### Output
+#### Output
 
-#### Generated Figures
+##### Generated Figures
 
 | Example 1 | Example 2|
 | -- | -- |
 | ![plot](./docs/images/opsin_characterization.png) | ![plot](./docs/images/channelrhodopsin_characterization_realistic.png) |
 
-#### Generated Questions (with Output Figure Example 1)
+##### Generated Questions (with Output Figure Example 1)
 The questions were saved into a `.json` file 
 ```JSON
 [
@@ -70,7 +223,7 @@ The questions were saved into a `.json` file
 ]
 ```
 
-#### Generated Data (with Output Figure Example 1)
+##### Generated Data (with Output Figure Example 1)
 Three `.csv` files were generated that contain the data used to create the figure.
 
 Light intensity response:
