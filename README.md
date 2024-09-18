@@ -8,9 +8,17 @@ Build a tool that can aggregate information from scientific figures into structu
 
 ## Approach
 
+### Reader
+
+Design an agent that can take in a paper and extract the quantitative results into structured data.
+
+### Generator
+
 Design an agent that takes in a data scenario and paper/figure examples and then outputs structured data, the data plotted into a figure, and several quantitative questions about the figure with difficulty rankings.
 
-For now, I'm prototyping independent plot readers and generators.
+### Curriculum Design
+
+For now, I'm prototyping independent plot readers and generators, but the original idea was to combine the reader and generator into an RL training loop with the reader as student and the generator as teacher.
 
 ## Results
 
