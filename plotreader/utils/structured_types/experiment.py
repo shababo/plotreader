@@ -8,15 +8,15 @@ from pydantic import BaseModel, Field
 
 
 class Experiment(BaseModel):
-    independant_variables: List[str]
-    dependant_variables: List[str]
+    independent_variables: List[str]
+    dependent_variables: List[str]
 
-class IndependantVariable(BaseModel):
+class IndependentVariable(BaseModel):
     name: str
     values: list = Field(default_factory=list)
     unit: str = Field(default = "None")
 
-class DependantVariable(BaseModel):
+class DependentVariable(BaseModel):
     name: str
     statistics: list[str] = Field(default_factory=list)
     unit: str = Field(default = "None")

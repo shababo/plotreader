@@ -10,7 +10,7 @@ Build a tool that can aggregate information from scientific figures into structu
 
 Design an agent that takes in a data scenario and paper/figure examples and then outputs structured data, the data plotted into a figure, and several quantitative questions about the figure with difficulty rankings.
 
-For now, I'm prototyping independant plot readers and generators.
+For now, I'm prototyping independent plot readers and generators.
 
 ## Results
 
@@ -25,38 +25,38 @@ Input Figure:
 
 Prompt:
 ```Python
-prompt = "For each plot in each panel determine the experiment in terms of independant variables (IVs) and dependant variable (DV)."
+prompt = "For each plot in each panel determine the experiment in terms of independent variables (IVs) and dependent variable (DV)."
 ```
 
 Structured Output:
 ```
 Panel: a
 	Plot: Current traces
-		independant_variables=['Time', 'ChR variant'] dependant_variables=['Current']
+		independent_variables=['Time', 'ChR variant'] dependent_variables=['Current']
 Panel: b
 	Plot: Photocurrent strength with different wavelength excitation
-		independant_variables=['ChR variant', 'Wavelength', 'Current type (Peak/Steady state)'] dependant_variables=['Photocurrent']
+		independent_variables=['ChR variant', 'Wavelength', 'Current type (Peak/Steady state)'] dependent_variables=['Photocurrent']
 Panel: c
 	Plot: Off-kinetics decay time
-		independant_variables=['ChR variant'] dependant_variables=['Off-kinetics decay time (τoff)']
+		independent_variables=['ChR variant'] dependent_variables=['Off-kinetics decay time (τoff)']
 	Plot: Current traces for select variants
-		independant_variables=['Time', 'ChR variant'] dependant_variables=['Current']
+		independent_variables=['Time', 'ChR variant'] dependent_variables=['Current']
 Panel: d
 	Plot: Wavelength sensitivity
-		independant_variables=['Wavelength', 'ChR variant'] dependant_variables=['Normalized photocurrent']
+		independent_variables=['Wavelength', 'ChR variant'] dependent_variables=['Normalized photocurrent']
 Panel: e
 	Plot: Peak photocurrent vs Intensity
-		independant_variables=['Light intensity', 'ChR variant'] dependant_variables=['Peak photocurrent']
+		independent_variables=['Light intensity', 'ChR variant'] dependent_variables=['Peak photocurrent']
 	Plot: Steady-state photocurrent vs Intensity
-		independant_variables=['Light intensity', 'ChR variant'] dependant_variables=['Steady-state photocurrent']
+		independent_variables=['Light intensity', 'ChR variant'] dependent_variables=['Steady-state photocurrent']
 ```
 
-#### Step 2: Extract values for independant and dependant variables from a single plot
+#### Step 2: Extract values for independent and dependent variables from a single plot
 
 Prompts:
 ```python
-prompt = """In Panel {panel_name}, plot number {plot_ind}, what values are taken by the independant variable {ind_var_name}?
-If the variable is not quantitative (like an image), only set the name field of IndependantVariable.
+prompt = """In Panel {panel_name}, plot number {plot_ind}, what values are taken by the independent variable {ind_var_name}?
+If the variable is not quantitative (like an image), only set the name field of IndependentVariable.
 Return your answer as structured data.
 """.format(
     panel_name = figure.panels[panel_ind].name, 
@@ -67,7 +67,7 @@ Return your answer as structured data.
 
 ```python
 prompt = """In Panel {panel_name}, plot number {plot_ind}, what statistics used to quantify the deependant variable {dep_var_name} like mean or SEM?
-If the variable is not quantitative (like an image), only set the name field of DependantVariable.
+If the variable is not quantitative (like an image), only set the name field of DependentVariable.
 Return your answer as structured data.
 """.format(
     panel_name = figure.panels[panel_ind].name, 
@@ -81,16 +81,16 @@ Structured Output:
 The values for `Wavelength` are not correct. Hoping to resolve this by allowing RAG over full paper.
 
 ```
-Panel d, Independant Vars:
+Panel d, Independent Vars:
 name='Wavelength' values=[400, 450, 500, 550, 600, 650] unit='nm'
 name='ChR variant' values=['ChRger1', 'ChRger2', 'ChRger3', 'ChR_25_9', 'ChR_15_10', 'CsChrimR', 'ChRiff'] unit='None'
 ```
 ```
-Panel d, Dependant Vars:
+Panel d, Dependent Vars:
 name='Normalized photocurrent' statistics=['mean', 's.e.m.'] unit='None'
 ```
 
-Step 3: Extract dependant variable statistics for each condition
+Step 3: Extract dependent variable statistics for each condition
 
 Prompt:
 ```python
@@ -98,12 +98,12 @@ columns = {iv.name: pd.Series() for iv in ind_vars}
 columns.update({dv.name: pd.Series()})
 df = pd.DataFrame(columns)
 
-prompt = """In Panel {panel_name}, what are the values of the {dep_var_stat} for the dependant variable {dep_var_name}?
-If the variable is not quantitative (like an image), only set the name field of IndependantVariable.
-Get the value for each condition. To help, here are the values the independant variable takes:
+prompt = """In Panel {panel_name}, what are the values of the {dep_var_stat} for the dependent variable {dep_var_name}?
+If the variable is not quantitative (like an image), only set the name field of IndependentVariable.
+Get the value for each condition. To help, here are the values the independent variable takes:
 {ind_vars}
 IMPORTANT:
-    THE EXPECTED VALUES FOR THE INDEPENDANT VARIABLES MAY BE INCORRECT. DO YOUR BEST TO ESTIMATE THE VALUE FOR THE INPUTS FROM THE PLOT.
+    THE EXPECTED VALUES FOR THE INDEPENDENT VARIABLES MAY BE INCORRECT. DO YOUR BEST TO ESTIMATE THE VALUE FOR THE INPUTS FROM THE PLOT.
 The column schema is the following: {schema}.
 """.format(
     panel_name = figure.panels[panel_ind].name, 
