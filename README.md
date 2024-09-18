@@ -16,7 +16,8 @@ For now, I'm prototyping independent plot readers and generators.
 
 ### Plot Reading
 
-Input Figure:
+Input Figure (from [Machine learning-guided channelrhodopsin engineering enables minimally invasive optogenetics
+](https://www.nature.com/articles/s41592-019-0583-8)):
 
 
 ![plot](./docs/images/opsin_features_test_w_caption_full_fig.png?)
@@ -187,7 +188,7 @@ generator.generate(
 )
 ```
 
-Two of the example figures it was given.
+Two of the example figures it was given (from [Machine learning-guided channelrhodopsin engineering enables minimally invasive optogenetics](https://www.nature.com/articles/s41592-019-0583-8)).
 
 | Example 1 | Example 2|
 | -- | -- |
