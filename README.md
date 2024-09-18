@@ -160,6 +160,8 @@ Structured Output:
 
 Plotting extracted data:
 
+Note: colors were not extracted and so not matched. Not a perfect result - some of this may come from incorrectly extracting the `Wavelength` values.
+
 | Extracted | Source |
 | -- | -- |
 | ![plot](./docs/images/extracted_data_plot.png) | ![plot](./docs/images/original_plot_for_extraction.png) |
