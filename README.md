@@ -19,7 +19,7 @@ For now, I'm prototyping independent plot readers and generators.
 Input Figure:
 
 
-![plot](./docs/images/opsin_features_test_w_caption_full_fig.png)
+![plot](./docs/images/opsin_features_test_w_caption_full_fig.png?)
 
 #### Step 1: Extract experiments from figure.
 
@@ -164,7 +164,7 @@ Note: colors were not extracted and so not matched. Not a perfect result - some 
 
 | Extracted | Source |
 | -- | -- |
-| ![plot](./docs/images/extracted_data_plot.png) | ![plot](./docs/images/original_plot_for_extraction.png) |
+| ![plot](./docs/images/extracted_data_plot.png?) | ![plot](./docs/images/original_plot_for_extraction.png?) |
 
 
 ### Plot Generation
@@ -191,7 +191,7 @@ Two of the example figures it was given.
 
 | Example 1 | Example 2|
 | -- | -- |
-| ![plot](./docs/images/example_figure.png) | ![plot](./docs/images/example_figure_2.png) |
+| ![plot](./docs/images/example_figure.png?) | ![plot](./docs/images/example_figure_2.png?) |
 
 
 
@@ -201,7 +201,7 @@ Two of the example figures it was given.
 
 | Example 1 | Example 2|
 | -- | -- |
-| ![plot](./docs/images/opsin_characterization.png) | ![plot](./docs/images/channelrhodopsin_characterization_realistic.png) |
+| ![plot](./docs/images/opsin_characterization.png?) | ![plot](./docs/images/channelrhodopsin_characterization_realistic.png?) |
 
 ##### Generated Questions (with Output Figure Example 1)
 The questions were saved into a `.json` file 
