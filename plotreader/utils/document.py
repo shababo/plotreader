@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from logging import warn
 import re
 from typing import Union, List, Any
 import os
@@ -7,15 +8,17 @@ import io
 import base64
 
 from llama_parse import LlamaParse
-from llama_cloud import NodeParser
+from llama_cloud import NodeParser, SentenceSplitter
 from llama_index.core import (
     VectorStoreIndex,
     load_index_from_storage,
     StorageContext,
     Document,
     SimpleDirectoryReader,
-    Settings
+    Settings,
+    
 )
+from llama_index.core.indices.multi_modal import MultiModalVectorStoreIndex
 from llama_index.core.tools import QueryEngineTool, ToolMetadata
 from llama_index.readers.github import GithubRepositoryReader, GithubClient
 from llama_index.core.node_parser import CodeSplitter
@@ -27,6 +30,9 @@ from llama_index.core.schema import ImageNode, NodeWithScore, MetadataMode
 from llama_index.core.prompts import PromptTemplate
 from llama_index.core.base.response.schema import Response
 from typing import Optional
+from llama_index.core.node_parser import SentenceWindowNodeParser
+from llama_index.core.postprocessor import MetadataReplacementPostProcessor
+
 
 from plotreader import _DEFAULT_EMBEDDING_MODEL, _MM_LLM
 
@@ -41,7 +47,7 @@ def image_to_base64(image: Union[str, Any]):
     else:
         # image = image.convert('RGB')
         image_data = io.BytesIO()
-        image.save(image_data, format='PNG', optimize=True, quality=100)
+        image.save(image_data, format=image.format.lower(), optimize=True, quality=100)
         image_data.seek(0)
         binary_data = image_data.getvalue()
     
@@ -104,7 +110,7 @@ class DocumentHandler(ABC):
 
         else:
             docs = self.load_docs()
-            vec_index = self._build_vec_index(docs, node_parser)
+            vec_index = self._build_vec_index(docs, node_parser=node_parser)
             if save:
                 vec_index.storage_context.persist(
                     persist_dir=save_dir
@@ -157,6 +163,15 @@ class DocumentHandler(ABC):
         return all([os.path.exists(os.path.join(dirpath, filename)) for filename in _INDEX_FILES])
     
 
+_DEFAULT_PARSING_PROMPTS = """
+The provided document is a scientific paper. 
+Extract the all of the text but DO NOT generate textual or tabular descriptions of the image. 
+Ignore all headers and footers that are metadata (like citation info).
+Ignore page boundaries!!
+Denote the beginning of figure captions with a new line followed by `[START FIGURE {fig_num} CAPTION]`.
+Denote the end of figure captions with a new line followed by `[END FIGURE {fig_num} CAPTION]`.
+BE AWARE THAT FIGURE CAPTIONS MAY EXTEND ON TO NEIGHBORING PAGES. 
+"""
 
 class DirectoryHandler(DocumentHandler):
 
@@ -171,7 +186,7 @@ class DirectoryHandler(DocumentHandler):
             **kwargs,
     ):
         
-        self._parsing_instructions = parsing_instructions
+        self._parsing_instructions = parsing_instructions or _DEFAULT_PARSING_PROMPTS
         self._dirpath = dirpath
 
         super().__init__(
@@ -186,8 +201,11 @@ class DirectoryHandler(DocumentHandler):
         return LlamaParse(
             result_type="markdown",
             parsing_instruction=self._parsing_instructions,
-            use_vendor_multimodal_model=True,
-            vendor_multimodal_model_name='anthropic-sonnet-3.5',
+            # use_vendor_multimodal_model=True,
+            # vendor_multimodal_model_name='anthropic-sonnet-3.5',
+            premium_mode=True,
+            split_by_page=False,
+            page_separator="\n"
         )
         
     def get_reader(self):
@@ -195,25 +213,34 @@ class DirectoryHandler(DocumentHandler):
         file_extractor =  {".pdf": self.get_parser()}
         return SimpleDirectoryReader(input_dir=self._dirpath, file_extractor=file_extractor)
         
+    @property
+    def node_parser(self):
+        return SentenceWindowNodeParser.from_defaults(
+            # sentence_splitter = SentenceSplitter(
+            #     chunk_size=256,
+            #     chunk_overlap=32,
+            #     include_prev_next_rel = True,
+            #     paragraph_separator='[paragraph break]'
+            # ),
+            window_size=50,
+            window_metadata_key="window",
+            original_text_metadata_key="original_text",
+        )
+    
     def load_docs(self) -> List[Document]:
 
         return self._reader.load_data()
     
 
 MM_PROMPT_TMPL = """\
-Below we give parsed text from documents in two different formats, as well as related images.
-
-We parse the text in both 'markdown' mode as well as 'raw text' mode. Markdown mode attempts \
-to convert relevant diagrams into tables, whereas raw text tries to maintain the rough spatial \
-layout of the text.
-
-Use all of the information available: the text/markdown and the provided image(s).
+Below we have information extracted from a paper relevant to the input query.
+Use all of the information available - both markdown and images.
 
 ---------------------
 {context_str}
 ---------------------
-Given the context information and not prior knowledge, respond the query. Explain whether you got the response 
-from the parsed markdown or raw text or image, and if there's discrepancies, and your reasoning for the final answer.
+Given the context information and images and not prior knowledge, respond the query. Explain whether you got the response 
+from the markdown text or images, and if there's discrepancies, and your reasoning for the final answer.
 
 Query: {query_str}
 Answer: """
@@ -244,11 +271,18 @@ class MultimodalQueryEngine(CustomQueryEngine):
         # retrieve text nodes
         nodes = self.retriever.retrieve(query_str)
         # create ImageNode items from text nodes
+        image_paths = set([
+            image["image_path"]
+            for n in nodes  
+            for image in n.metadata["images"]
+        ])
         image_nodes = [
-            NodeWithScore(node=ImageNode(image_path=n.metadata["image_path"]))
-            for n in nodes
+            NodeWithScore(node=ImageNode(image_path=image_path))
+            for image_path in image_paths
         ]
 
+        postprocessor = MetadataReplacementPostProcessor(target_metadata_key="window")
+        nodes = postprocessor.postprocess_nodes(nodes)
         # create context string from text nodes, dump into the prompt
         context_str = "\n\n".join(
             [r.get_content(metadata_mode=MetadataMode.LLM) for r in nodes]
@@ -270,14 +304,15 @@ class MultimodalQueryEngine(CustomQueryEngine):
     
 class MultimodalDirectoryHandler(DirectoryHandler):
 
-    def get_parser(self):
+    # def get_parser(self):
 
-        return LlamaParse(
-            result_type="markdown",
-            parsing_instruction=self._parsing_instructions,
-            use_vendor_multimodal_model=True,
-            vendor_multimodal_model_name='anthropic-sonnet-3.5',
-        )
+    #     return LlamaParse(
+    #         result_type="markdown",
+    #         parsing_instruction=self._parsing_instructions,
+    #         # use_vendor_multimodal_model=True,
+    #         # vendor_multimodal_model_name='anthropic-sonnet-3.5',
+    #         premium_mode=True,
+    #     )
         
     def get_reader(self):
         "Multimodal parsing and retrieval does not use a built in reader."
@@ -293,25 +328,55 @@ class MultimodalDirectoryHandler(DirectoryHandler):
         docs = []
         for file in files:
 
-            json_objs = parser.get_json_result(file)
+            try:
+                json_objs = parser.get_json_result(file)
+            except Exception as e:
+                warn(f"Error processing file {file}: {e}")
+                continue
 
             if len(json_objs) == 0:
                 continue
+            
+            # Remove all files in data_images dir
+            data_images_dir = os.path.join(self.storage_dir, "data_images")
+            if os.path.exists(data_images_dir):
+                for filename in os.listdir(data_images_dir):
+                    file_path = os.path.join(data_images_dir, filename)
+                    try:
+                        if os.path.isfile(file_path):
+                            os.unlink(file_path)
+                    except Exception as e:
+                        print(f"Error deleting file {file_path}: {e}")
 
-            image_dicts = parser.get_images(json_objs, download_path=os.path.join(self.storage_dir,"data_images"))
+            image_dicts = parser.get_images(json_objs, download_path=data_images_dir)
             json_dicts = json_objs[0]["pages"]
 
             # docs_text = text_parser.load_data(file)
 
-            docs += self._get_nodes(json_dicts, image_dir="data_images")
+            docs += self._get_nodes(json_dicts, image_dicts)
 
         return docs
+
+    # def _build_vec_index(self, docs: List[Document], node_parser: NodeParser = None):
+        
+    #     node_parser = node_parser or self.node_parser
+
+    #     if node_parser is not None:
+    #         nodes = node_parser.get_nodes_from_documents(docs)
+    #         return MultiModalVectorStoreIndex(nodes)
+    #     else:
+    #         return MultiModalVectorStoreIndex(docs)
     
     def query_engine(self, top_k: int = _DEFAULT_RETRIEVAL_K) -> Any:
         "Return a Query Engine for this document."
         
         return MultimodalQueryEngine(
-                    retriever=self.vector_index().as_retriever(similarity_top_k=top_k), 
+                    retriever=self.vector_index().as_retriever(
+                        similarity_top_k=top_k,
+                        node_postprocessors=[
+                            MetadataReplacementPostProcessor(target_metadata_key="window")
+                        ],
+                    ), 
                     multi_modal_llm=_MM_LLM, 
                     similarity_top_k=top_k
                 )
@@ -320,7 +385,7 @@ class MultimodalDirectoryHandler(DirectoryHandler):
         "Return a Tool that can query this document."
         
         return QueryEngineTool(
-                query_engine=self.query_engine(),
+                query_engine=self.query_engine(top_k = top_k),
                 metadata=ToolMetadata(
                     name=f"{self.name}_multimodal_vector_tool",
                     description=f"This tool can query these documents which may include images: {self.desc}.",
@@ -328,7 +393,7 @@ class MultimodalDirectoryHandler(DirectoryHandler):
             )
     
     def _get_page_number(self, file_name):
-        match = re.search(r"-page-(\d+)\.jpg$", str(file_name))
+        match = re.search(r"-page[-_](\d+)\.jpg$", str(file_name))
         if match:
             return int(match.group(1))
         return 0
@@ -339,19 +404,37 @@ class MultimodalDirectoryHandler(DirectoryHandler):
         sorted_files = sorted(raw_files, key=self._get_page_number)
         return sorted_files
     
-    def _get_nodes(self, json_dicts, image_dir):
+    def _get_images_by_page(self, image_dicts):
+
+        image_dicts_by_page = {}
+        for image_dict in image_dicts:
+            page_num = image_dict['page_number']
+            image_path = image_dict['path']
+            image_metadata = {"image_path": image_path, "page_num": page_num}
+            if image_dicts_by_page.get(page_num):
+                image_dicts_by_page[image_dict['page_number']].append(
+                    image_metadata
+                )
+            else:
+                image_dicts_by_page[image_dict['page_number']] = [
+                    image_metadata
+                ]
+
+        return image_dicts_by_page
+    
+    def _get_nodes(self, json_dicts, image_dicts):
         """Creates nodes from json + images"""
 
         nodes = []
 
-        docs = [doc["md"] for doc in json_dicts]  # extract text
-        image_files = self._get_sorted_image_files(image_dir)  # extract images
+        # docs = [doc["md"] for doc in json_dicts]  # extract text
+        image_dicts_by_page = self._get_images_by_page(image_dicts)  # extract images
 
-        for idx, doc in enumerate(docs):
+        for idx, doc in enumerate(json_dicts):
             # adds both a text node and the corresponding image node (jpg of the page) for each page
             node = TextNode(
-                text=doc,
-                metadata={"image_path": str(image_files[idx]), "page_num": idx + 1},
+                text=doc["md"],
+                metadata={"images": image_dicts_by_page[idx + 1]},
             )
             nodes.append(node)
 
