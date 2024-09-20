@@ -6,6 +6,11 @@ import os
 from pathlib import Path
 import io
 import base64
+from time import sleep
+import urllib3
+
+from groundx import Groundx
+from llmsherpa.readers import LayoutPDFReader
 
 from llama_parse import LlamaParse
 from llama_cloud import NodeParser, SentenceSplitter
@@ -70,25 +75,18 @@ class DocumentHandler(ABC):
         self.desc = desc
         self.storage_dir = storage_dir
         self._use_cache = use_cache
-
-        self._reader = self.get_reader()
-
-    def get_parser(self):
+    
+    @property
+    def node_parser(self):
+        "Get the node parser for this document handler."
         return None
     
-    @abstractmethod
-    def get_reader(self):
-        raise NotImplementedError(
-            f"{self.__class__.__name__} does not provide necerssary get_reader method."
-        )
-
     @abstractmethod
     def load_docs(self) -> List[Document]:
         "Load the raw documents into a set of Document instances."
         raise NotImplementedError(
             f"{self.__class__.__name__} does not provide necerssary load_docs method."
         )
-
 
     def vector_index(
             self, 
@@ -117,10 +115,6 @@ class DocumentHandler(ABC):
                 )
 
         return vec_index
-
-    @property
-    def node_parser(self):
-        return None
 
     def _build_vec_index(self, docs: List[Document], node_parser: NodeParser = None):
         
@@ -195,26 +189,10 @@ class DirectoryHandler(DocumentHandler):
             desc=desc,
             **kwargs,
         )
-
-    def get_parser(self):
-
-        return LlamaParse(
-            result_type="markdown",
-            parsing_instruction=self._parsing_instructions,
-            # use_vendor_multimodal_model=True,
-            # vendor_multimodal_model_name='anthropic-sonnet-3.5',
-            premium_mode=True,
-            split_by_page=False,
-            page_separator="\n"
-        )
-        
-    def get_reader(self):
-        
-        file_extractor =  {".pdf": self.get_parser()}
-        return SimpleDirectoryReader(input_dir=self._dirpath, file_extractor=file_extractor)
         
     @property
     def node_parser(self):
+
         return SentenceWindowNodeParser.from_defaults(
             # sentence_splitter = SentenceSplitter(
             #     chunk_size=256,
@@ -229,7 +207,20 @@ class DirectoryHandler(DocumentHandler):
     
     def load_docs(self) -> List[Document]:
 
-        return self._reader.load_data()
+        parser = LlamaParse(
+            result_type="markdown",
+            parsing_instruction=self._parsing_instructions,
+            # use_vendor_multimodal_model=True,
+            # vendor_multimodal_model_name='anthropic-sonnet-3.5',
+            premium_mode=True,
+            split_by_page=False,
+            page_separator="\n"
+        )
+
+        file_extractor =  {".pdf": parser}
+        reader = SimpleDirectoryReader(input_dir=self._dirpath, file_extractor=file_extractor)
+
+        return reader.load_data()
     
 
 MM_PROMPT_TMPL = """\
@@ -314,13 +305,18 @@ class MultimodalDirectoryHandler(DirectoryHandler):
     #         premium_mode=True,
     #     )
         
-    def get_reader(self):
-        "Multimodal parsing and retrieval does not use a built in reader."
-        return None
         
     def load_docs(self) -> List[Document]:
         
-        parser = self.get_parser()
+        parser = LlamaParse(
+            result_type="markdown",
+            parsing_instruction=self._parsing_instructions,
+            # use_vendor_multimodal_model=True,
+            # vendor_multimodal_model_name='anthropic-sonnet-3.5',
+            premium_mode=True,
+            split_by_page=False,
+            page_separator="\n"
+        )
         # text_parser = LlamaParse(result_type="text")
         # Get all files in self._dirpath, non-recursively, excluding directories
         files = [os.path.join(self._dirpath, f) for f in os.listdir(self._dirpath) if os.path.isfile(os.path.join(self._dirpath, f))]
@@ -357,16 +353,7 @@ class MultimodalDirectoryHandler(DirectoryHandler):
 
         return docs
 
-    # def _build_vec_index(self, docs: List[Document], node_parser: NodeParser = None):
-        
-    #     node_parser = node_parser or self.node_parser
 
-    #     if node_parser is not None:
-    #         nodes = node_parser.get_nodes_from_documents(docs)
-    #         return MultiModalVectorStoreIndex(nodes)
-    #     else:
-    #         return MultiModalVectorStoreIndex(docs)
-    
     def query_engine(self, top_k: int = _DEFAULT_RETRIEVAL_K) -> Any:
         "Return a Query Engine for this document."
         
@@ -474,11 +461,11 @@ class GitHubRepoHandler(DocumentHandler):
             desc = desc, 
             storage_dir = storage_dir
         )
-        
-        
-        
-    def get_reader(self):
-        return GithubRepositoryReader(
+                
+
+    def load_docs(self) -> List[Document]:
+
+        reader = GithubRepositoryReader(
             github_client=self._github_client,
             owner=self._owner,
             repo=self._repo,
@@ -494,9 +481,7 @@ class GitHubRepoHandler(DocumentHandler):
             ),
         )
 
-    def load_docs(self) -> List[Document]:
-
-        return self._reader.load_data(branch=self._branch)
+        return reader.load_data(branch=self._branch)
     
     @property
     def node_parser(self):
@@ -507,3 +492,80 @@ class GitHubRepoHandler(DocumentHandler):
             return CodeSplitter(self._language) # NOTE: I EDITED THE SOURCE IN THIS ENV TO PROPERLY LOAD THE PYTHON PARSER
 
 
+class ScientificPaperHandler(DocumentHandler):
+
+    _LLMSHERPA_LOCAL_URL = "http://localhost:5010/api/parseDocument?renderFormat=all"
+
+    def __init__(
+            self,
+            filepath: str,
+            **kwargs
+    ):
+        
+        file_extension = filepath.split(".")[-1].lower()
+        if file_extension != "pdf":
+            raise ValueError("Only PDF files are allow.")
+        
+        self._filepath = filepath
+        super().__init__(**kwargs)
+
+    def _llmsherpa_text_parse(self):
+
+        reader = LayoutPDFReader(self._LLMSHERPA_LOCAL_URL)
+        parsed_doc = reader.read_pdf(self._filepath)
+
+        return parsed_doc
+    
+    def _is_groundx_processing(self, groundx, process_id):
+
+        response = groundx.documents.get_processing_status_by_id(
+            process_id=process_id
+        )
+
+        return response
+
+    def _groundx_figure_parse(self):
+
+        groundx = Groundx(
+            api_key=os.environ['GROUNDX_API_KEY'],
+        )
+
+        filename = os.path.split(self._filepath)[-1].split('.')[0]
+        response = groundx.documents.ingest_local(
+            body=[
+                {
+                    "blob": open(self._filepath, "rb"),
+                    "metadata": {
+                        "bucketId": 11481,
+                        "fileName": filename,
+                        "fileType": "pdf",
+                        "searchData": {},
+                    },
+                },
+            ]
+        )
+
+        process_id = response.body['ingest']['processId']
+        is_processing = True
+        while is_processing:
+            sleep(2.)
+            response = self._is_groundx_processing(groundx, process_id)
+            is_processing = response.body['status'] != "complete"
+                
+        doc_json = urllib3.request("GET",response.body['document']['xrayUrl']).json()
+
+        figures = []
+
+        for chunk in doc_json['chunks']:
+            if 'figure' in chunk['contentType']:
+                figures.append(chunk)
+
+        return figures
+
+
+    def load_docs(self):
+
+        doc_json = self._groundx_figure_parse()
+        doc_tree = self._llmsherpa_text_parse()
+
+        return doc_json, doc_tree
