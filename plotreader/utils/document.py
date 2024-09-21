@@ -1,5 +1,7 @@
 from abc import ABC, abstractmethod
 from logging import warn
+from multiprocessing import process
+import pickle
 import re
 from typing import Union, List, Any
 import os
@@ -8,9 +10,16 @@ import io
 import base64
 from time import sleep
 import urllib3
+import tempfile
+from PIL import Image
+from io import BytesIO
+import requests
+from pydantic import BaseModel, Field
 
 from groundx import Groundx
 from llmsherpa.readers import LayoutPDFReader
+from llmsherpa.readers.layout_reader import Section
+from llama_index.postprocessor.cohere_rerank import CohereRerank
 
 from llama_parse import LlamaParse
 from llama_cloud import NodeParser, SentenceSplitter
@@ -30,6 +39,7 @@ from llama_index.core.node_parser import CodeSplitter
 from llama_index.core.schema import TextNode
 from llama_index.core.query_engine import CustomQueryEngine, SimpleMultiModalQueryEngine
 from llama_index.core.retrievers import BaseRetriever
+from llama_index.core.multi_modal_llms import MultiModalLLM
 from llama_index.multi_modal_llms.openai import OpenAIMultiModal
 from llama_index.core.schema import ImageNode, NodeWithScore, MetadataMode
 from llama_index.core.prompts import PromptTemplate
@@ -37,9 +47,13 @@ from llama_index.core.base.response.schema import Response
 from typing import Optional
 from llama_index.core.node_parser import SentenceWindowNodeParser
 from llama_index.core.postprocessor import MetadataReplacementPostProcessor
+from llama_index.core.extractors import PydanticProgramExtractor
+from llama_index.core.program import MultiModalLLMCompletionProgram
+from llama_index.core.schema import QueryBundle
 
 
-from plotreader import _DEFAULT_EMBEDDING_MODEL, _MM_LLM
+
+from plotreader import _DEFAULT_EMBEDDING_MODEL, _MM_LLM, _GPT4O_MULTIMODAL
 
 _DEFAULT_RETRIEVAL_K = 5
 
@@ -224,14 +238,16 @@ class DirectoryHandler(DocumentHandler):
     
 
 MM_PROMPT_TMPL = """\
-Below we have information extracted from a paper relevant to the input query.
-Use all of the information available - both markdown and images.
+Below we provide information from a paper relevant to the input query.
 
+RETRIEVED INFORMATION:
 ---------------------
 {context_str}
 ---------------------
-Given the context information and images and not prior knowledge, respond the query. Explain whether you got the response 
-from the markdown text or images, and if there's discrepancies, and your reasoning for the final answer.
+
+Given that information and the provided images, respond to the query below. 
+Be sure to check all images for information even if the text seems sufficient.
+There may be discrepancies or errors in either one. Use all available information to resolve the discrepancies if possible.
 
 Query: {query_str}
 Answer: """
@@ -246,21 +262,27 @@ class MultimodalQueryEngine(CustomQueryEngine):
     Also takes in a prompt template and multimodal model.
 
     """
-    qa_prompt: PromptTemplate
     retriever: BaseRetriever
-    multi_modal_llm: Any
+    qa_prompt: PromptTemplate = Field(default_factory=lambda: MM_PROMPT)
+    multi_modal_llm: MultiModalLLM = Field(default_factory=lambda: _MM_LLM)
+    node_postprocessors: Optional[list] = Field(default_factory=list)
 
-    def __init__(self,  
-                 qa_prompt: Optional[PromptTemplate] = None,
-                 **kwargs
-        ) -> None:
-        """Initialize."""
-
-        super().__init__(qa_prompt=qa_prompt or MM_PROMPT,  **kwargs)
+    # def __init__(self,  
+    #              qa_prompt: Optional[PromptTemplate] = None,
+    #              node_postprocessors: Optional[List] = None,
+    #              **kwargs
+    #     ) -> None:
+    #     """Initialize."""
+    #     self.node_postprocessors = node_postprocessors or []
+    #     super().__init__(qa_prompt=qa_prompt or MM_PROMPT, **kwargs)
 
     def custom_query(self, query_str: str):
         # retrieve text nodes
         nodes = self.retriever.retrieve(query_str)
+
+        # Apply node postprocessors
+        for postprocessor in self.node_postprocessors:
+            nodes = postprocessor.postprocess_nodes(nodes, query_bundle=QueryBundle(query_str=query_str))
         # create ImageNode items from text nodes
         image_paths = set([
             image["image_path"]
@@ -272,13 +294,18 @@ class MultimodalQueryEngine(CustomQueryEngine):
             for image_path in image_paths
         ]
 
-        postprocessor = MetadataReplacementPostProcessor(target_metadata_key="window")
-        nodes = postprocessor.postprocess_nodes(nodes)
+        # postprocessor = MetadataReplacementPostProcessor(target_metadata_key="window")
+        # nodes = postprocessor.postprocess_nodes(nodes)
         # create context string from text nodes, dump into the prompt
+
+        
+
         context_str = "\n\n".join(
             [r.get_content(metadata_mode=MetadataMode.LLM) for r in nodes]
         )
         fmt_prompt = self.qa_prompt.format(context_str=context_str, query_str=query_str)
+
+        
 
         # synthesize an answer from formatted text and images
         llm_response = self.multi_modal_llm.complete(
@@ -291,20 +318,34 @@ class MultimodalQueryEngine(CustomQueryEngine):
             metadata={"text_nodes": nodes, "image_nodes": image_nodes},
         )
 
+class MultiModalDocumentHandler(DocumentHandler):
 
-    
-class MultimodalDirectoryHandler(DirectoryHandler):
-
-    # def get_parser(self):
-
-    #     return LlamaParse(
-    #         result_type="markdown",
-    #         parsing_instruction=self._parsing_instructions,
-    #         # use_vendor_multimodal_model=True,
-    #         # vendor_multimodal_model_name='anthropic-sonnet-3.5',
-    #         premium_mode=True,
-    #     )
+    def query_engine(self, top_k: int = _DEFAULT_RETRIEVAL_K, node_postprocessors = None) -> Any:
+        "Return a Query Engine for this document."
         
+        return MultimodalQueryEngine(
+                    retriever=self.vector_index().as_retriever(
+                        similarity_top_k=top_k,
+                    ), 
+                    multi_modal_llm=_MM_LLM, 
+                    node_postprocessors = node_postprocessors,
+                )
+    
+    def query_engine_tool(self, top_k: int = _DEFAULT_RETRIEVAL_K) -> QueryEngineTool:
+        "Return a Tool that can query this document."
+        cohere_rerank = CohereRerank(top_n=10)
+        return QueryEngineTool(
+                query_engine=self.query_engine(
+                    top_k = top_k,
+                    node_postprocessors=[cohere_rerank]
+                ),
+                metadata=ToolMetadata(
+                    name=f"{self.name}_multimodal_vector_tool",
+                    description=f"This tool can query these documents which may include images: {self.desc}.",
+                ),
+            )
+    
+class MultimodalDirectoryHandler(DirectoryHandler, MultiModalDocumentHandler):
         
     def load_docs(self) -> List[Document]:
         
@@ -353,32 +394,6 @@ class MultimodalDirectoryHandler(DirectoryHandler):
 
         return docs
 
-
-    def query_engine(self, top_k: int = _DEFAULT_RETRIEVAL_K) -> Any:
-        "Return a Query Engine for this document."
-        
-        return MultimodalQueryEngine(
-                    retriever=self.vector_index().as_retriever(
-                        similarity_top_k=top_k,
-                        node_postprocessors=[
-                            MetadataReplacementPostProcessor(target_metadata_key="window")
-                        ],
-                    ), 
-                    multi_modal_llm=_MM_LLM, 
-                    similarity_top_k=top_k
-                )
-    
-    def query_engine_tool(self, top_k: int = _DEFAULT_RETRIEVAL_K) -> QueryEngineTool:
-        "Return a Tool that can query this document."
-        
-        return QueryEngineTool(
-                query_engine=self.query_engine(top_k = top_k),
-                metadata=ToolMetadata(
-                    name=f"{self.name}_multimodal_vector_tool",
-                    description=f"This tool can query these documents which may include images: {self.desc}.",
-                ),
-            )
-    
     def _get_page_number(self, file_name):
         match = re.search(r"-page[-_](\d+)\.jpg$", str(file_name))
         if match:
@@ -492,21 +507,63 @@ class GitHubRepoHandler(DocumentHandler):
             return CodeSplitter(self._language) # NOTE: I EDITED THE SOURCE IN THIS ENV TO PROPERLY LOAD THE PYTHON PARSER
 
 
-class ScientificPaperHandler(DocumentHandler):
+
+class ScientificDocNodeMetadata(BaseModel):
+    """Node metadata."""
+
+    is_aux_text: bool = Field(
+        ...,
+        description=(
+            "Is this text a part of the document that is not useful (e.g. headers, footers, titles, references, etc...)"
+        )
+    )
+    # entities: list[str] = Field(
+    #     ..., description="Unique entities in this text chunk."
+    # )
+    summary: str = Field(
+        ..., description="A one sentence summary of this text chunk."
+    )
+    page_numbers: list[int] = Field(
+        ...,
+        description = "The page numbers this content appeared on in the original docs."
+    )
+    fig_refs: list[str] = Field(
+        ...,
+        description=(
+            "The names of any figures relevant to this content (e.g Figure 2, Figure 5) whether mentioned explicitly or not."
+        ),
+    )
+    contains_fig_caption: bool = Field(
+        ...,
+        description = "Does this text seem like a figure caption?"
+    )
+    # figures_on_page: list[str] = Field(
+    #     ...,
+    #     description=(
+    #         "The names of any figures that are on this page (e.g. [Figure 1, Figure 2])."
+    #     ),
+    # ),
+
+class ScientificPaperHandler(MultiModalDocumentHandler):
 
     _LLMSHERPA_LOCAL_URL = "http://localhost:5010/api/parseDocument?renderFormat=all"
 
     def __init__(
             self,
-            filepath: str,
+            filepath: str = None,
+            document_id: str = None,
             **kwargs
     ):
         
-        file_extension = filepath.split(".")[-1].lower()
-        if file_extension != "pdf":
-            raise ValueError("Only PDF files are allow.")
+        if filepath is not None:
+            
+            file_extension = filepath.split(".")[-1].lower()
+            if file_extension != "pdf":
+                raise ValueError("Only PDF files are allow.")
         
         self._filepath = filepath
+        self._document_id = document_id
+
         super().__init__(**kwargs)
 
     def _llmsherpa_text_parse(self):
@@ -525,47 +582,171 @@ class ScientificPaperHandler(DocumentHandler):
         return response
 
     def _groundx_figure_parse(self):
-
+        
         groundx = Groundx(
             api_key=os.environ['GROUNDX_API_KEY'],
         )
 
-        filename = os.path.split(self._filepath)[-1].split('.')[0]
-        response = groundx.documents.ingest_local(
-            body=[
-                {
-                    "blob": open(self._filepath, "rb"),
-                    "metadata": {
-                        "bucketId": 11481,
-                        "fileName": filename,
-                        "fileType": "pdf",
-                        "searchData": {},
+        if self._document_id is not None:
+
+            response = groundx.documents.get(document_id = self._document_id)
+            doc = response.body
+            url = doc['document']['xrayUrl']
+
+        else:
+            filename = os.path.split(self._filepath)[-1].split('.')[0]
+            response = groundx.documents.ingest_local(
+                body=[
+                    {
+                        "blob": open(self._filepath, "rb"),
+                        "metadata": {
+                            "bucketId": 11481,
+                            "fileName": filename,
+                            "fileType": "pdf",
+                            "searchData": {},
+                        },
                     },
-                },
-            ]
-        )
+                ]
+            )
 
-        process_id = response.body['ingest']['processId']
-        is_processing = True
-        while is_processing:
-            sleep(2.)
-            response = self._is_groundx_processing(groundx, process_id)
-            is_processing = response.body['status'] != "complete"
-                
-        doc_json = urllib3.request("GET",response.body['document']['xrayUrl']).json()
+            process_id = response.body['ingest']['processId']
+            is_processing = True
+            while is_processing:
+                sleep(10.)
+                response = self._is_groundx_processing(groundx, process_id)
+                is_processing = response.body['ingest']['status'] != "complete"
+                    
+            url = response.body['ingest']['progress']['complete']['documents'][0]['xrayUrl']
 
+        doc_json = urllib3.request("GET",url).json()
         figures = []
-
         for chunk in doc_json['chunks']:
             if 'figure' in chunk['contentType']:
                 figures.append(chunk)
 
         return figures
 
+    def _build_nodes(self, fig_nodes, doc_tree):
 
+        text_nodes = [
+            TextNode(
+                text = node.to_text(), 
+                metadata= {
+                    "images": [],
+                    "page_num": node.page_idx + 1,
+                    "parsed_section_title": ">".join([parent.title for parent in node.parent_chain()[1:] if isinstance(parent, Section) and parent.level != 0]),
+                }
+            ) 
+            for node in doc_tree.chunks()
+        ]
+
+        # Remove all files in data_images dir
+        data_images_dir = os.path.join(self.storage_dir, "data_images")
+        if os.path.exists(data_images_dir):
+            for filename in os.listdir(data_images_dir):
+                file_path = os.path.join(data_images_dir, filename)
+                try:
+                    if os.path.isfile(file_path):
+                        os.unlink(file_path)
+                except Exception as e:
+                    print(f"Error deleting file {file_path}: {e}")
+
+        image_nodes = []
+        for node in fig_nodes:
+            image_filepath = os.path.join(data_images_dir,node['chunk'] + '.jpg')
+            image = Image.open(BytesIO(requests.get(node['multimodalUrl']).content))
+            image.save(image_filepath)
+                
+            image_nodes.append(
+                TextNode(
+                    text = "\n".join([str(json_str) for json_str in node['json']]),
+                    metadata= {
+                        "images": [
+                            {
+                                "image_path": image_filepath, 
+                                "page_num": node['pageNumbers'][0]
+                            }
+                        ],
+                        "page_num": node['pageNumbers'][0]
+                    }
+                )
+            )
+
+        return text_nodes + image_nodes
+        
+    def _process_nodes(self, nodes):
+
+        # image_documents = [
+        #     ImageNode(
+        #         image_path = image['image_path'],
+        #         text = node.text,
+        #         metadata = node.metadata
+        #     )
+        #     for node in nodes
+        #     for image in node.metadata['images']
+        # ]
+
+        # EXTRACT_TEMPLATE_STR = """\
+        # You will create metadata about the following content. The information you need to generate the metadata \
+        # can be found in the content below or in the provided images.
+
+        # Here is the content of the section:
+        # ----------------
+        # {input}
+        # ----------------
+        # """
+
+        # openai_program = MultiModalLLMCompletionProgram.from_defaults(
+        #     output_cls=ScientificDocNodeMetadata,
+        #     image_documents=image_documents,
+        #     prompt_template_str="{input}",
+        #     # prompt=EXTRACT_TEMPLATE_STR,
+        #     multi_modal_llm=_GPT4O_MULTIMODAL,
+        #     verbose=True,
+        # )
+
+        # program_extractor = PydanticProgramExtractor(
+        #     program=openai_program, input_key="input", show_progress=True, in_place = False
+        # )
+
+        # from time import sleep
+
+        # BATCH_SIZE = 10
+
+        # processed_nodes = []
+        # for batch_idx in range(len(nodes)//BATCH_SIZE + 1):
+        #     batch_finished = False
+        #     while not batch_finished:
+        #         try:
+        #             new_nodes = program_extractor.process_nodes(nodes[batch_idx*BATCH_SIZE:(batch_idx + 1)*BATCH_SIZE], num_workers=1)
+        #             batch_finished = True
+        #         except Exception as e:
+        #             print(f"Sleeping because of exception: {e}")
+        #             sleep(60.)
+        #             # raise(e)
+        #     processed_nodes += new_nodes
+
+        save_dir = os.path.join(self.storage_dir,'saved_nodes',self.name)
+        # if not os.path.exists(save_dir):
+        #     os.mkdir(save_dir)
+        save_file = os.path.join(save_dir,'nodes.pkl')
+        # pickle.dump(processed_nodes, open(save_file,"wb"))
+
+        processed_nodes = pickle.load(open(save_file,"rb"))
+
+        return processed_nodes
+        good_nodes = [
+            node for node in processed_nodes if not node.metadata['is_aux_text']
+        ]
+
+        return good_nodes
+    
     def load_docs(self):
 
-        doc_json = self._groundx_figure_parse()
+        fig_chunks = self._groundx_figure_parse()
         doc_tree = self._llmsherpa_text_parse()
 
-        return doc_json, doc_tree
+        nodes = self._build_nodes(fig_chunks, doc_tree)
+        nodes = self._process_nodes(nodes)
+
+        return nodes
