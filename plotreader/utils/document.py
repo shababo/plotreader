@@ -734,12 +734,12 @@ class ScientificPaperHandler(MultiModalDocumentHandler):
 
         processed_nodes = pickle.load(open(save_file,"rb"))
 
-        return processed_nodes
-        good_nodes = [
-            node for node in processed_nodes if not node.metadata['is_aux_text']
-        ]
+        # return processed_nodes
+        # good_nodes = [
+        #     node for node in processed_nodes if not node.metadata['is_aux_text']
+        # ]
 
-        return good_nodes
+        # return good_nodes
     
     def load_docs(self):
 
