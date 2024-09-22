@@ -171,14 +171,11 @@ class DocumentHandler(ABC):
         return all([os.path.exists(os.path.join(dirpath, filename)) for filename in _INDEX_FILES])
     
 
-_DEFAULT_PARSING_PROMPTS = """
+_DEFAULT_PARSING_PROMPT = """
 The provided document is a scientific paper. 
-Extract the all of the text but DO NOT generate textual or tabular descriptions of the image. 
 Ignore all headers and footers that are metadata (like citation info).
-Ignore page boundaries!!
-Denote the beginning of figure captions with a new line followed by `[START FIGURE {fig_num} CAPTION]`.
-Denote the end of figure captions with a new line followed by `[END FIGURE {fig_num} CAPTION]`.
-BE AWARE THAT FIGURE CAPTIONS MAY EXTEND ON TO NEIGHBORING PAGES. 
+If possible, create sections for each figure caption - some figure captions may be split across pages.
+Be aware that in some PDFs the figurs and captions are embedded in the layout and in others all of the figures are grouped together in a section - often at the end.
 """
 
 class DirectoryHandler(DocumentHandler):
@@ -194,7 +191,7 @@ class DirectoryHandler(DocumentHandler):
             **kwargs,
     ):
         
-        self._parsing_instructions = parsing_instructions or _DEFAULT_PARSING_PROMPTS
+        self._parsing_instructions = parsing_instructions or _DEFAULT_PARSING_PROMPT
         self._dirpath = dirpath
 
         super().__init__(
@@ -227,8 +224,9 @@ class DirectoryHandler(DocumentHandler):
             # use_vendor_multimodal_model=True,
             # vendor_multimodal_model_name='anthropic-sonnet-3.5',
             premium_mode=True,
-            split_by_page=False,
-            page_separator="\n"
+            split_by_page=True,
+            page_separator="\n",
+            take_screenshot=True,
         )
 
         file_extractor =  {".pdf": parser}
