@@ -564,6 +564,36 @@ class ScientificPaperHandler(MultiModalDocumentHandler):
 
         super().__init__(**kwargs)
 
+    def _llamaindex_parse(self):
+
+        parser = LlamaParse(
+            result_type="markdown",
+            parsing_instruction=_DEFAULT_PARSING_PROMPT,
+            # use_vendor_multimodal_model=True,
+            # vendor_multimodal_model_name='anthropic-sonnet-3.5',
+            premium_mode=True,
+            split_by_page=True,
+            page_separator="\n",
+            take_screenshot=True,
+        )
+
+        json_objs = parser.get_json_result("/Users/loyalshababo/dev/plotreader/sandbox/storage/tmp/nihms-1538039.pdf")
+        page_dicts = json_objs[0]["pages"]
+
+        data_images_dir = os.path.join(self.storage_dir, "data_images")
+        if os.path.exists(data_images_dir):
+            for filename in os.listdir(data_images_dir):
+                file_path = os.path.join(data_images_dir, filename)
+                try:
+                    if os.path.isfile(file_path):
+                        os.unlink(file_path)
+                except Exception as e:
+                    print(f"Error deleting file {file_path}: {e}")
+
+        image_dicts = parser.get_images(json_objs, download_path=data_images_dir)
+
+        return page_dicts, image_dicts
+
     def _llmsherpa_text_parse(self):
 
         reader = LayoutPDFReader(self._LLMSHERPA_LOCAL_URL)
@@ -623,8 +653,84 @@ class ScientificPaperHandler(MultiModalDocumentHandler):
                 figures.append(chunk)
 
         return figures
+    
+    def _extract_page_metadata(self, image_dicts):
 
-    def _build_nodes(self, fig_nodes, doc_tree):
+        claude_mm = BasicAnthropicAgent(model="claude-3-5-sonnet-20240620")
+
+        output_parser = PydanticOutputParser(output_cls=PageMetadata)
+        prompt_page_metadata = PromptTemplate(
+            "The image provided is a page from a scientific paper. Is there a figure in this image? If so, what is the figure's name?",
+            output_parser=output_parser
+        ).format(llm=plotreader._CLAUDE_SONNET35_MULTIMODAL)
+
+        page_metadata_responses = []
+        prev_page_contains_fig_caption = False
+        for image_dict in image_dicts:
+            if image_dict.get("type") == "full_page_screenshot":
+
+                # get page metadata
+                page_num = image_dict.get("page_number")
+                page_img = Image.open(image_dict.get("path"))
+                response = claude_mm.message(prompt_page_metadata, images=[page_img])
+                page_metadata_responses.append(output_parser.parse(response.content[0].text))
+
+        return page_metadata_responses
+                
+
+    def _revise_markdown(self, page_dicts, image_dicts, page_metadata_responses):
+
+        revision_prompt = """Below is a markdown string parsed from a signle page of a scientific paper PDF. 
+        Your job is to revise the levels of each part of the extracted markdown string so it matches the PDF.
+        To aid you, I've provided the list of expected section headers for the page and information about whether or not to expecdt figure captions.
+        Plese make each Figure caption its own section. Note that some figure captions may be split across two pages.
+        Also, do not change any text. Only change the levels and organization of the sections to better match the PDF image.
+
+        Page number: {page_number}
+
+        Expected sections:
+        {sections}
+
+        PARSED MARKDOWN:
+        {content1}
+
+        CONTAINS WHOLE OR PARTIAL FIGURE CAPTION:
+        {contains_fig_caption}
+
+        PREVIOUS PAGE CONTAINS WHOLE OR PARTIAL FIGURE CAPTION:
+        {previous_page_contains_fig_caption}
+
+
+        Return only the final markdown string without any other text.
+        """
+
+        claude_mm = BasicAnthropicAgent(model="claude-3-5-sonnet-20240620")
+
+        prev_page_contains_fig_caption = False
+        for image_dict in enumerate(page_metadata_responses):
+            if image_dict.get("type") == "full_page_screenshot":
+                
+                page_num = image_dict.get("page_number")
+                page_img = Image.open(image_dict.get("path"))
+                # revise page mark  down
+                try:
+                    page_md = page_dicts[page_num-1]["md"]
+                    revision_prompt_with_md = revision_prompt.format(
+                    page_number=page_num, 
+                        sections=page_metadata_responses[page_num-1].section_headers, 
+                        content1=page_md,
+                        previous_page_contains_fig_caption=prev_page_contains_fig_caption,
+                        contains_fig_caption=page_metadata_responses[page_num-1].contains_fig_caption,
+                    )
+                    response = claude_mm.message(revision_prompt_with_md, images=[page_img])
+                    revised_md = response.content[0].text
+                    page_dicts[page_num-1]["md_revised"] = revised_md
+                except Exception as e:
+                    print(e)    
+                    page_dicts[page_num-1]["md_revised"] = page_md
+
+
+    def _build_nodes(self, fig_nodes, page_dicts, image_dicts, page_metadata_responses):
 
         text_nodes = [
             TextNode(
@@ -738,13 +844,31 @@ class ScientificPaperHandler(MultiModalDocumentHandler):
         # ]
 
         # return good_nodes
+
+    def _build_markdown_nodes(self, page_dicts):
+
+        full_text = ""
+        for page in page_dicts:
+            if page["md_revised"].startswith("#"):
+                prefix = "/n/n"
+            else:
+                prefix = ""
+            full_text += prefix + page["md_revised"]
+
+        return full_text
     
     def load_docs(self):
 
         fig_chunks = self._groundx_figure_parse()
-        doc_tree = self._llmsherpa_text_parse()
+        # doc_tree = self._llmsherpa_text_parse()
+        page_dicts, image_dicts = self._llamaindex_parse()
 
-        nodes = self._build_nodes(fig_chunks, doc_tree)
+        page_metadata_responses = self._extract_page_metadata(page_dicts)
+
+        self._revise_markdown(page_dicts, image_dicts, page_metadata_responses)
+        markdown_nodes = self._build_markdown_nodes(page_dicts)
+
+        nodes = self._build_nodes(fig_chunks, page_dicts, image_dicts, page_metadata_responses)
         nodes = self._process_nodes(nodes)
 
         return nodes
