@@ -4,7 +4,7 @@ from PIL.Image import Image
 import anthropic
 from anthropic.types.message import Message
 
-from plotreader.utils.document import image_to_base64
+from plotreader.utils import image_to_base64
 
 
 class BasicAnthropicAgent:

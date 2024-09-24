@@ -6,8 +6,6 @@ import re
 from typing import Union, List, Any
 import os
 from pathlib import Path
-import io
-import base64
 from time import sleep
 import urllib3
 import tempfile
@@ -22,7 +20,7 @@ from llmsherpa.readers.layout_reader import Section
 from llama_index.postprocessor.cohere_rerank import CohereRerank
 
 from llama_parse import LlamaParse
-from llama_cloud import NodeParser, SentenceSplitter
+from llama_index.core.node_parser import MarkdownNodeParser, NodeParser, SentenceSplitter
 from llama_index.core import (
     VectorStoreIndex,
     load_index_from_storage,
@@ -50,29 +48,15 @@ from llama_index.core.postprocessor import MetadataReplacementPostProcessor
 from llama_index.core.extractors import PydanticProgramExtractor
 from llama_index.core.program import MultiModalLLMCompletionProgram
 from llama_index.core.schema import QueryBundle
+from llama_index.core.output_parsers.pydantic import PydanticOutputParser
 
-
-
+from plotreader.utils.structured_types.paper import PageMetadata
+import plotreader
 from plotreader import _DEFAULT_EMBEDDING_MODEL, _MM_LLM, _GPT4O_MULTIMODAL
+from plotreader.utils.base import BasicAnthropicAgent
 
 _DEFAULT_RETRIEVAL_K = 5
 
-def image_to_base64(image: Union[str, Any]):
-
-    if isinstance(image, str):
-        with open(image, "rb") as image_file:
-            binary_data = image_file.read()
-        
-    else:
-        # image = image.convert('RGB')
-        image_data = io.BytesIO()
-        image.save(image_data, format=image.format.lower(), optimize=True, quality=100)
-        image_data.seek(0)
-        binary_data = image_data.getvalue()
-    
-    
-    base_64_encoded_data = base64.b64encode(binary_data)
-    return base_64_encoded_data.decode('utf-8')
 
 class DocumentHandler(ABC):
     
@@ -285,12 +269,19 @@ class MultimodalQueryEngine(CustomQueryEngine):
         image_paths = set([
             image["image_path"]
             for n in nodes  
+            if n.metadata.get("images")
             for image in n.metadata["images"]
         ])
-        image_nodes = [
-            NodeWithScore(node=ImageNode(image_path=image_path))
+        converted_image_nodes = [
+            ImageNode(image_path=image_path)
             for image_path in image_paths
         ]
+        retrieved_image_nodes = [
+            node.node
+            for node in nodes
+            if isinstance(node.node, ImageNode)
+        ]
+        image_nodes = converted_image_nodes + retrieved_image_nodes
 
         # postprocessor = MetadataReplacementPostProcessor(target_metadata_key="window")
         # nodes = postprocessor.postprocess_nodes(nodes)
@@ -308,7 +299,7 @@ class MultimodalQueryEngine(CustomQueryEngine):
         # synthesize an answer from formatted text and images
         llm_response = self.multi_modal_llm.complete(
             prompt=fmt_prompt,
-            image_documents=[image_node.node for image_node in image_nodes],
+            image_documents=image_nodes,
         )
         return Response(
             response=str(llm_response),
@@ -318,12 +309,18 @@ class MultimodalQueryEngine(CustomQueryEngine):
 
 class MultiModalDocumentHandler(DocumentHandler):
 
+    def _get_retriever(self, top_k: int = _DEFAULT_RETRIEVAL_K):
+        return self.vector_index().as_retriever(
+            similarity_top_k=top_k, 
+        )
+
     def query_engine(self, top_k: int = _DEFAULT_RETRIEVAL_K, node_postprocessors = None) -> Any:
         "Return a Query Engine for this document."
         
+        retriever = self._get_retriever(top_k = top_k)
         return MultimodalQueryEngine(
                     retriever=self.vector_index().as_retriever(
-                        similarity_top_k=top_k,
+                        similarity_top_k=top_k, 
                     ), 
                     multi_modal_llm=_MM_LLM, 
                     node_postprocessors = node_postprocessors,
@@ -333,7 +330,7 @@ class MultiModalDocumentHandler(DocumentHandler):
         "Return a Tool that can query this document."
         cohere_rerank = CohereRerank(top_n=10)
         return QueryEngineTool(
-                query_engine=self.query_engine(
+                query_engine=self.query_engine( 
                     top_k = top_k,
                     node_postprocessors=[cohere_rerank]
                 ),
@@ -509,42 +506,40 @@ class GitHubRepoHandler(DocumentHandler):
 class ScientificDocNodeMetadata(BaseModel):
     """Node metadata."""
 
-    is_aux_text: bool = Field(
+    experimental_variable_entities: list[str] = Field(
         ...,
-        description=(
-            "Is this text a part of the document that is not useful (e.g. headers, footers, titles, references, etc...)"
-        )
-    )
-    # entities: list[str] = Field(
-    #     ..., description="Unique entities in this text chunk."
-    # )
-    summary: str = Field(
-        ..., description="A one sentence summary of this text chunk."
-    )
-    page_numbers: list[int] = Field(
-        ...,
-        description = "The page numbers this content appeared on in the original docs."
+        description="A list of independent or dependent variables in experiments"
     )
     fig_refs: list[str] = Field(
         ...,
-        description=(
-            "The names of any figures relevant to this content (e.g Figure 2, Figure 5) whether mentioned explicitly or not."
-        ),
+        description="A list of figures that are referenced in this text including figure captions."
     )
-    contains_fig_caption: bool = Field(
+
+class MetadataResponse(BaseModel):
+    node_metadata: ScientificDocNodeMetadata
+    finished_page_img: bool = Field(
         ...,
-        description = "Does this text seem like a figure caption?"
+        description="Whether or not the next node will require the next page."
     )
-    # figures_on_page: list[str] = Field(
-    #     ...,
-    #     description=(
-    #         "The names of any figures that are on this page (e.g. [Figure 1, Figure 2])."
-    #     ),
-    # ),
+    text_not_found: bool = Field(
+        ...,
+        description="Whether or not the text was not found in the page."
+    )
+
+class ScientificDocImageNodeRevision(BaseModel):
+    figure_id: str = Field(
+        ...,
+        description="The name of this figure in the paper (e.g. Figure 1, Figure 2, etc.)."
+    )
+    revised_text: str = Field(
+        ...,
+        description="The revised text of the supplied figure description."
+    )
+
 
 class ScientificPaperHandler(MultiModalDocumentHandler):
 
-    _LLMSHERPA_LOCAL_URL = "http://localhost:5010/api/parseDocument?renderFormat=all"
+    # _LLMSHERPA_LOCAL_URL = "http://localhost:5010/api/parseDocument?renderFormat=all"
 
     def __init__(
             self,
@@ -564,6 +559,12 @@ class ScientificPaperHandler(MultiModalDocumentHandler):
 
         super().__init__(**kwargs)
 
+    def _get_retriever(self, top_k: int = _DEFAULT_RETRIEVAL_K):
+        return self.vector_index().as_retriever(
+            similarity_top_k=top_k, 
+        )
+
+
     def _llamaindex_parse(self):
 
         parser = LlamaParse(
@@ -577,10 +578,9 @@ class ScientificPaperHandler(MultiModalDocumentHandler):
             take_screenshot=True,
         )
 
-        json_objs = parser.get_json_result("/Users/loyalshababo/dev/plotreader/sandbox/storage/tmp/nihms-1538039.pdf")
-        page_dicts = json_objs[0]["pages"]
+        json_objs = parser.get_json_result(self._filepath)
 
-        data_images_dir = os.path.join(self.storage_dir, "data_images")
+        data_images_dir = os.path.join(self.storage_dir, "data_images" + "_page_screenshots")
         if os.path.exists(data_images_dir):
             for filename in os.listdir(data_images_dir):
                 file_path = os.path.join(data_images_dir, filename)
@@ -592,14 +592,131 @@ class ScientificPaperHandler(MultiModalDocumentHandler):
 
         image_dicts = parser.get_images(json_objs, download_path=data_images_dir)
 
-        return page_dicts, image_dicts
+        # You've also been provided with an image of the page and the page before and after (if they exist).
+        revision_prompt = """Below is a markdown string parsed from a target page of a scientific paper PDF. 
+Your job is to revise the levels of each part of the extracted markdown string so it matches the image of the PDF and makes sense with the document so far.
+You will be given the image of the target page and the page before (if it exists). The initial parsed markdown string is provided below.
+Do your best to infer the image of the page AND the inferred structure of the document so far.
+Use common sense about what the main sections of a scientific paper are (e.g. Abstract, Introduction, Methods, Results, Discussion, References, etc.).
 
-    def _llmsherpa_text_parse(self):
+DO NOT CHANGE THE CONTENT OF THE PARAGRAPHS, ONLY THE HEADERS AND THEIR LEVELS to best match the PDF image.
+You may add headers/levels if a section was only denoted based on visual formating (e.g. an abstract, table of contents, or figure caption).
+Assume that each page is a continuation of the section at the end of the previous page unless you are provided with clear evidence to the contrary.
+Do not include any content or headers from headings or footers at the top and bottom of each page even if they were originally extracted into the markdown.
 
-        reader = LayoutPDFReader(self._LLMSHERPA_LOCAL_URL)
-        parsed_doc = reader.read_pdf(self._filepath)
+Do your best to put figure captions in their own sections. If the target page does not have any other section headers, then the figure caption should be the first section and you should add a header to restart the current section.
 
-        return parsed_doc
+To aid you, I've provided the inferred levels and headers of the document so far - separated by page.
+IMPORTANT: this is one continuous document, so you don't need to add parent headers if they aren't on the target page.
+
+Target page number: {page_number}
+
+LEVEL/HEADERS OF DOCUMENT SO FAR (SEPARATED BY PAGE):
+{previous_page_headers}
+
+PARSED MARKDOWN:
+{content1}
+
+Return only the final markdown string without any other text.
+        """
+
+        claude_mm = BasicAnthropicAgent(model="claude-3-5-sonnet-20240620")
+        image_by_page = []
+        full_page_dicts = []
+        doc_headers = []
+        prev_page_image = None
+        for image_dict in image_dicts:
+            if image_dict.get("type") == "full_page_screenshot":
+                
+                full_page_dicts.append(image_dict)
+                # get page metadata
+                page_num = image_dict.get("page_number")
+                page_img = Image.open(image_dict.get("path"))
+                image_by_page.append(page_img)
+                
+        #         # revise page markdown
+        #         try:
+        #             page_md = json_objs[0]["pages"][page_num-1]["md"]
+        #             revision_prompt_with_md = revision_prompt.format(
+        #                 page_number=page_num, 
+        #                 content1=page_md,
+        #                 previous_page_headers=f"\n".join(doc_headers),
+        #             )
+        #             print(revision_prompt_with_md)
+        #             images = [prev_page_image] if prev_page_image is not None else []
+        #             images += [page_img]
+        #             response = claude_mm.message(revision_prompt_with_md, images=images)
+        #             revised_md = response.content[0].text
+        #             json_objs[0]["pages"][page_num-1]["md_revised"] = revised_md
+
+                    
+        #             doc_headers.append(f"[PAGE {page_num}]")
+        #             node = TextNode(text=revised_md)
+        #             nodes = MarkdownNodeParser().get_nodes_from_node(node)
+        #             for node in nodes:
+        #                 node_level = -1
+        #                 header = ""
+        #                 for key in node.metadata.keys():
+        #                     if key.startswith("Header_"):
+        #                         level = int(key.split("_")[1])
+        #                         if level > node_level:
+        #                             node_level = level
+        #                             header = "".join(["#"]*level) + " " + node.metadata.get(key)
+        #                 doc_headers.append(header)
+        #         except Exception as e:
+        #             print(e)    
+        #             json_objs[0]["pages"][page_num-1]["md_revised"] = page_md
+
+        # full_text = ""
+        # for page in json_objs[0]["pages"]:
+        #     if page["md_revised"].startswith("#"):
+        #         prefix = "\n\n"
+        #     else:
+        #         prefix = ""
+        #     full_text += prefix + page["md_revised"]
+
+        # nodes = MarkdownNodeParser().get_nodes_from_node(TextNode(text=f"{full_text.strip()}"))
+
+        # pickle.dump(nodes, open(os.path.join(self.storage_dir, "llama_text_nodes_cp01.pkl"), "wb"))
+
+#         nodes = pickle.load(open(os.path.join(self.storage_dir, "llama_text_nodes_cp01.pkl"), "rb"))
+
+#         output_parser = PydanticOutputParser(output_cls=ScientificDocNodeMetadata)
+#         prompt_page_metadata ="""
+# Extract the metadata descrbied in the structure below from the text of the node.
+
+# Node Text:
+# {node_text}
+# """
+           
+
+#         # cur_page = 1
+#         # cur_image = image_by_page[0]
+#         for node in nodes:
+#             clean_txt = node.text.replace("{", "{{").replace("}","}}")
+#             prompt = PromptTemplate(
+#                 prompt_page_metadata.format(node_text=clean_txt),
+#                 output_parser = output_parser
+#             ).format(
+#                 llm=plotreader._CLAUDE_SONNET35_MULTIMODAL
+#             )
+#             response = claude_mm.message(prompt)
+#             metadata_response = output_parser.parse(response.content[0].text)
+#             node.metadata.update(metadata_response.model_dump())
+#             # if metadata_response.finished_page_img and cur_page < len(image_by_page):
+#             #     cur_image = image_by_page[cur_page]
+#             #     cur_page += 1
+
+#         pickle.dump(nodes, open(os.path.join(self.storage_dir, "llama_text_nodes_cp02.pkl"), "wb"))
+        nodes = pickle.load(open(os.path.join(self.storage_dir, "llama_text_nodes_cp02.pkl"), "rb"))
+        return nodes, full_page_dicts
+
+    # def _llmsherpa_text_parse(self):
+
+    #     reader = LayoutPDFReader(self._LLMSHERPA_LOCAL_URL)
+    #     parsed_doc = reader.read_pdf(self._filepath)
+
+    #     return parsed_doc
     
     def _is_groundx_processing(self, groundx, process_id):
 
@@ -608,8 +725,48 @@ class ScientificPaperHandler(MultiModalDocumentHandler):
         )
 
         return response
+    
+    def _revise_image_nodes(self, image_nodes):
 
-    def _groundx_figure_parse(self):
+        claude_mm = BasicAnthropicAgent(model="claude-3-5-sonnet-20240620")
+
+        base_prompt = """
+You are an expert at detailed descriptions of figures in scientific papers.
+You will be given a figure and an attempt to describe that figure with text.
+Your job is to revise the text to best describe the figure.
+In particular, you should ensure that all details about labels and values are accurate.
+Always defer to the image.
+
+ATTEMPTED DESCRIPTION:
+{description}
+
+"""
+
+        
+        for image_node in image_nodes:
+            
+            prompt = base_prompt.format(description=image_node.text)
+
+            response = requests.get(image_node.image_url)
+            fig_img = Image.open(BytesIO(response.content))
+
+            response = claude_mm.message(prompt, images=[fig_img])
+            
+            image_node.text = response.content[0].text
+
+            
+        return image_nodes
+    
+    def _get_image_nodes_groundx(self):
+
+        fig_chunks = self._get_figchunks_groundx()
+        image_nodes = self._chunks_to_image_nodes(fig_chunks)
+        image_nodes = self._revise_image_nodes(image_nodes)
+
+        return image_nodes
+
+
+    def _get_figchunks_groundx(self):
         
         groundx = Groundx(
             api_key=os.environ['GROUNDX_API_KEY'],
@@ -647,12 +804,30 @@ class ScientificPaperHandler(MultiModalDocumentHandler):
             url = response.body['ingest']['progress']['complete']['documents'][0]['xrayUrl']
 
         doc_json = urllib3.request("GET",url).json()
-        figures = []
+        fig_chunks = []
         for chunk in doc_json['chunks']:
             if 'figure' in chunk['contentType']:
-                figures.append(chunk)
+                fig_chunks.append(chunk)
 
-        return figures
+        return fig_chunks
+    
+    def _chunks_to_image_nodes(self, fig_chunks):
+
+
+        image_nodes = []
+        for chunk in fig_chunks:
+                
+            image_nodes.append(
+                ImageNode(
+                    image_url = chunk['multimodalUrl'],
+                    text = "".join(chunk['suggestedText']),
+                    metadata = {
+                        "page_number": chunk['pageNumbers'][0]
+                    }
+                )
+            )
+
+        return image_nodes
     
     def _extract_page_metadata(self, image_dicts):
 
@@ -678,172 +853,73 @@ class ScientificPaperHandler(MultiModalDocumentHandler):
         return page_metadata_responses
                 
 
-    def _revise_markdown(self, page_dicts, image_dicts, page_metadata_responses):
-
-        revision_prompt = """Below is a markdown string parsed from a signle page of a scientific paper PDF. 
-        Your job is to revise the levels of each part of the extracted markdown string so it matches the PDF.
-        To aid you, I've provided the list of expected section headers for the page and information about whether or not to expecdt figure captions.
-        Plese make each Figure caption its own section. Note that some figure captions may be split across two pages.
-        Also, do not change any text. Only change the levels and organization of the sections to better match the PDF image.
-
-        Page number: {page_number}
-
-        Expected sections:
-        {sections}
-
-        PARSED MARKDOWN:
-        {content1}
-
-        CONTAINS WHOLE OR PARTIAL FIGURE CAPTION:
-        {contains_fig_caption}
-
-        PREVIOUS PAGE CONTAINS WHOLE OR PARTIAL FIGURE CAPTION:
-        {previous_page_contains_fig_caption}
-
-
-        Return only the final markdown string without any other text.
-        """
-
-        claude_mm = BasicAnthropicAgent(model="claude-3-5-sonnet-20240620")
-
-        prev_page_contains_fig_caption = False
-        for image_dict in enumerate(page_metadata_responses):
-            if image_dict.get("type") == "full_page_screenshot":
-                
-                page_num = image_dict.get("page_number")
-                page_img = Image.open(image_dict.get("path"))
-                # revise page mark  down
-                try:
-                    page_md = page_dicts[page_num-1]["md"]
-                    revision_prompt_with_md = revision_prompt.format(
-                    page_number=page_num, 
-                        sections=page_metadata_responses[page_num-1].section_headers, 
-                        content1=page_md,
-                        previous_page_contains_fig_caption=prev_page_contains_fig_caption,
-                        contains_fig_caption=page_metadata_responses[page_num-1].contains_fig_caption,
-                    )
-                    response = claude_mm.message(revision_prompt_with_md, images=[page_img])
-                    revised_md = response.content[0].text
-                    page_dicts[page_num-1]["md_revised"] = revised_md
-                except Exception as e:
-                    print(e)    
-                    page_dicts[page_num-1]["md_revised"] = page_md
-
-
-    def _build_nodes(self, fig_nodes, page_dicts, image_dicts, page_metadata_responses):
-
-        text_nodes = [
-            TextNode(
-                text = node.to_text(), 
-                metadata= {
-                    "images": [],
-                    "page_num": node.page_idx + 1,
-                    "parsed_section_title": ">".join([parent.title for parent in node.parent_chain()[1:] if isinstance(parent, Section) and parent.level != 0]),
-                }
-            ) 
-            for node in doc_tree.chunks()
-        ]
-
-        # Remove all files in data_images dir
-        data_images_dir = os.path.join(self.storage_dir, "data_images")
-        if os.path.exists(data_images_dir):
-            for filename in os.listdir(data_images_dir):
-                file_path = os.path.join(data_images_dir, filename)
-                try:
-                    if os.path.isfile(file_path):
-                        os.unlink(file_path)
-                except Exception as e:
-                    print(f"Error deleting file {file_path}: {e}")
-
-        image_nodes = []
-        for node in fig_nodes:
-            image_filepath = os.path.join(data_images_dir,node['chunk'] + '.jpg')
-            image = Image.open(BytesIO(requests.get(node['multimodalUrl']).content))
-            image.save(image_filepath)
-                
-            image_nodes.append(
-                TextNode(
-                    text = "\n".join([str(json_str) for json_str in node['json']]),
-                    metadata= {
-                        "images": [
-                            {
-                                "image_path": image_filepath, 
-                                "page_num": node['pageNumbers'][0]
-                            }
-                        ],
-                        "page_num": node['pageNumbers'][0]
-                    }
-                )
-            )
-
-        return text_nodes + image_nodes
         
-    def _process_nodes(self, nodes):
+    # def _process_nodes(self, nodes):
 
-        # image_documents = [
-        #     ImageNode(
-        #         image_path = image['image_path'],
-        #         text = node.text,
-        #         metadata = node.metadata
-        #     )
-        #     for node in nodes
-        #     for image in node.metadata['images']
-        # ]
+    #     image_documents = [
+    #         ImageNode(
+    #             image_path = image['image_path'],
+    #             text = node.text,
+    #             metadata = node.metadata
+    #         )
+    #         for node in nodes
+    #         for image in node.metadata['images']
+    #     ]
 
-        # EXTRACT_TEMPLATE_STR = """\
-        # You will create metadata about the following content. The information you need to generate the metadata \
-        # can be found in the content below or in the provided images.
+    #     # EXTRACT_TEMPLATE_STR = """\
+    #     # You will create metadata about the following content. The information you need to generate the metadata \
+    #     # can be found in the content below or in the provided images.
 
-        # Here is the content of the section:
-        # ----------------
-        # {input}
-        # ----------------
-        # """
+    #     # Here is the content of the section:
+    #     # ----------------
+    #     # {input}
+    #     # ----------------
+    #     # """
 
-        # openai_program = MultiModalLLMCompletionProgram.from_defaults(
-        #     output_cls=ScientificDocNodeMetadata,
-        #     image_documents=image_documents,
-        #     prompt_template_str="{input}",
-        #     # prompt=EXTRACT_TEMPLATE_STR,
-        #     multi_modal_llm=_GPT4O_MULTIMODAL,
-        #     verbose=True,
-        # )
+    #     # openai_program = MultiModalLLMCompletionProgram.from_defaults(
+    #     #     output_cls=ScientificDocNodeMetadata,
+    #     #     image_documents=image_documents,
+    #     #     prompt_template_str="{input}",
+    #     #     # prompt=EXTRACT_TEMPLATE_STR,
+    #     #     multi_modal_llm=_GPT4O_MULTIMODAL,
+    #     #     verbose=True,
+    #     # )
 
-        # program_extractor = PydanticProgramExtractor(
-        #     program=openai_program, input_key="input", show_progress=True, in_place = False
-        # )
+    #     # program_extractor = PydanticProgramExtractor(
+    #     #     program=openai_program, input_key="input", show_progress=True, in_place = False
+    #     # )
 
-        # from time import sleep
+    #     # from time import sleep
 
-        # BATCH_SIZE = 10
+    #     # BATCH_SIZE = 10
 
-        # processed_nodes = []
-        # for batch_idx in range(len(nodes)//BATCH_SIZE + 1):
-        #     batch_finished = False
-        #     while not batch_finished:
-        #         try:
-        #             new_nodes = program_extractor.process_nodes(nodes[batch_idx*BATCH_SIZE:(batch_idx + 1)*BATCH_SIZE], num_workers=1)
-        #             batch_finished = True
-        #         except Exception as e:
-        #             print(f"Sleeping because of exception: {e}")
-        #             sleep(60.)
-        #             # raise(e)
-        #     processed_nodes += new_nodes
+    #     # processed_nodes = []
+    #     # for batch_idx in range(len(nodes)//BATCH_SIZE + 1):
+    #     #     batch_finished = False
+    #     #     while not batch_finished:
+    #     #         try:
+    #     #             new_nodes = program_extractor.process_nodes(nodes[batch_idx*BATCH_SIZE:(batch_idx + 1)*BATCH_SIZE], num_workers=1)
+    #     #             batch_finished = True
+    #     #         except Exception as e:
+    #     #             print(f"Sleeping because of exception: {e}")
+    #     #             sleep(60.)
+    #     #             # raise(e)
+    #     #     processed_nodes += new_nodes
 
-        save_dir = os.path.join(self.storage_dir,'saved_nodes',self.name)
-        # if not os.path.exists(save_dir):
-        #     os.mkdir(save_dir)
-        save_file = os.path.join(save_dir,'nodes.pkl')
-        # pickle.dump(processed_nodes, open(save_file,"wb"))
+    #     save_dir = os.path.join(self.storage_dir,'saved_nodes',self.name)
+    #     # if not os.path.exists(save_dir):
+    #     #     os.mkdir(save_dir)
+    #     save_file = os.path.join(save_dir,'nodes.pkl')
+    #     # pickle.dump(processed_nodes, open(save_file,"wb"))
 
-        processed_nodes = pickle.load(open(save_file,"rb"))
+    #     processed_nodes = pickle.load(open(save_file,"rb"))
 
-        # return processed_nodes
-        # good_nodes = [
-        #     node for node in processed_nodes if not node.metadata['is_aux_text']
-        # ]
+    #     # return processed_nodes
+    #     # good_nodes = [
+    #     #     node for node in processed_nodes if not node.metadata['is_aux_text']
+    #     # ]
 
-        # return good_nodes
+    #     # return good_nodes
 
     def _build_markdown_nodes(self, page_dicts):
 
@@ -859,16 +935,51 @@ class ScientificPaperHandler(MultiModalDocumentHandler):
     
     def load_docs(self):
 
-        fig_chunks = self._groundx_figure_parse()
-        # doc_tree = self._llmsherpa_text_parse()
-        page_dicts, image_dicts = self._llamaindex_parse()
+        # image_nodes = self._get_image_nodes_groundx()
+        # pickle.dump(image_nodes, open(os.path.join(self.storage_dir, "image_nodes.pkl"), "wb"))
+        image_nodes = pickle.load(open(os.path.join(self.storage_dir, "image_nodes.pkl"), "rb"))
 
-        page_metadata_responses = self._extract_page_metadata(page_dicts)
+        # # doc_tree = self._llmsherpa_text_parse()
+        text_nodes, full_page_dicts = self._llamaindex_parse()
+        # pickle.dump(text_nodes, open(os.path.join(self.storage_dir, "text_nodes.pkl"), "wb"))
+        pickle.dump(full_page_dicts, open(os.path.join(self.storage_dir, "full_page_dicts.pkl"), "wb"))
+        
 
-        self._revise_markdown(page_dicts, image_dicts, page_metadata_responses)
-        markdown_nodes = self._build_markdown_nodes(page_dicts)
+        
+        text_nodes = pickle.load(open(os.path.join(self.storage_dir, "text_nodes.pkl"), "rb"))
+        full_page_dicts = pickle.load(open(os.path.join(self.storage_dir, "full_page_dicts.pkl"), "rb"))
 
-        nodes = self._build_nodes(fig_chunks, page_dicts, image_dicts, page_metadata_responses)
-        nodes = self._process_nodes(nodes)
+        claude_mm = BasicAnthropicAgent(model="claude-3-5-sonnet-20240620")
+        for node in image_nodes:
+            page_num = node.metadata.get("page_number")
+            for page_dict in full_page_dicts:
+                if page_dict.get("page_number") == page_num:
+                    page_img = Image.open(page_dict.get("path"))
 
-        return nodes
+            response = requests.get(node.image_url)
+            fig_image = Image.open(BytesIO(response.content))
+            class FigureName(BaseModel):
+                figure_name: str = Field(
+                    ...,
+                    description="The name of the figure in the scientific paper (e.g. Figure 1, Figure 2, etc.)."
+                )
+            prompt = "Which figure is shown in the cropped image? Use the full page image as a reference."
+
+            output_parser = PydanticOutputParser(output_cls=FigureName)
+            prompt_figure_name = PromptTemplate(
+                prompt,
+                output_parser=output_parser
+            ).format(llm=plotreader._CLAUDE_SONNET35_MULTIMODAL)
+
+            
+            response = claude_mm.message(prompt_figure_name, images=[fig_image, page_img])
+            figure_name = output_parser.parse(response.content[0].text)
+            node.metadata['fig_refs'] = [figure_name.figure_name]
+
+        all_nodes = text_nodes + image_nodes
+
+        pickle.dump(all_nodes, open(os.path.join(self.storage_dir, "all_nodes.pkl"), "wb"))
+        all_nodes = pickle.load(open(os.path.join(self.storage_dir, "all_nodes.pkl"), "rb"))
+
+                    
+        return all_nodes
