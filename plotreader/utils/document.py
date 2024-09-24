@@ -560,9 +560,8 @@ class ScientificPaperHandler(MultiModalDocumentHandler):
         super().__init__(**kwargs)
 
     def _get_retriever(self, top_k: int = _DEFAULT_RETRIEVAL_K):
-        return self.vector_index().as_retriever(
-            similarity_top_k=top_k, 
-        )
+        
+        
 
 
     def _llamaindex_parse(self):
