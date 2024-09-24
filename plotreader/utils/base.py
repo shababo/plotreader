@@ -4,7 +4,7 @@ from PIL.Image import Image
 import anthropic
 from anthropic.types.message import Message
 
-from plotreader.utils.document import image_to_base64
+from plotreader.utils import image_to_base64
 
 
 class BasicAnthropicAgent:
@@ -13,7 +13,7 @@ class BasicAnthropicAgent:
             self,
             model: str,
             max_tokens: int = 2048,
-            temperature: float = 0.,
+            temperature: float = 0.1,
             system_prompt: str = None,
     ):
         
@@ -25,8 +25,8 @@ class BasicAnthropicAgent:
         self._api = anthropic.Anthropic()
 
 
-    def message(self, prompt: str, images: list[Image]) -> Message:
-
+    def message(self, prompt: str, images: list[Image] = None) -> Message:
+        images = images or []
         return self._api.messages.create(
             model=self._model,
             max_tokens=self._max_tokens,
