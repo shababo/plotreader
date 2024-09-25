@@ -54,7 +54,7 @@ from llama_index.core.output_parsers.pydantic import PydanticOutputParser
 from plotreader.utils.structured_types.paper import PageMetadata
 import plotreader
 from plotreader import _DEFAULT_EMBEDDING_MODEL, _MM_LLM, _GPT4O_MULTIMODAL
-from plotreader.utils.base import BasicAnthropicAgent
+from plotreader.utils.base import BasicAnthropicLLM
 
 _DEFAULT_RETRIEVAL_K = 5
 
@@ -624,7 +624,7 @@ PARSED MARKDOWN:
 Return only the final markdown string without any other text.
         """
 
-        claude_mm = BasicAnthropicAgent(model="claude-3-5-sonnet-20240620")
+        claude_mm = BasicAnthropicLLM(model="claude-3-5-sonnet-20240620")
         image_by_page = []
         full_page_dicts = []
         doc_headers = []
@@ -732,7 +732,7 @@ Return only the final markdown string without any other text.
     
     def _revise_image_nodes(self, image_nodes):
 
-        claude_mm = BasicAnthropicAgent(model="claude-3-5-sonnet-20240620")
+        claude_mm = BasicAnthropicLLM(model="claude-3-5-sonnet-20240620")
 
         base_prompt = """
 You are an expert at detailed descriptions of figures in scientific papers.
@@ -835,7 +835,7 @@ ATTEMPTED DESCRIPTION:
     
     def _extract_page_metadata(self, image_dicts):
 
-        claude_mm = BasicAnthropicAgent(model="claude-3-5-sonnet-20240620")
+        claude_mm = BasicAnthropicLLM(model="claude-3-5-sonnet-20240620")
 
         output_parser = PydanticOutputParser(output_cls=PageMetadata)
         prompt_page_metadata = PromptTemplate(
