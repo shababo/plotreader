@@ -20,6 +20,7 @@ from llmsherpa.readers.layout_reader import Section
 from llama_index.postprocessor.cohere_rerank import CohereRerank
 
 from llama_parse import LlamaParse
+from llama_index.core.vector_stores.types import MetadataFilters
 from llama_index.core.node_parser import MarkdownNodeParser, NodeParser, SentenceSplitter
 from llama_index.core import (
     VectorStoreIndex,
@@ -309,30 +310,30 @@ class MultimodalQueryEngine(CustomQueryEngine):
 
 class MultiModalDocumentHandler(DocumentHandler):
 
-    def _get_retriever(self, top_k: int = _DEFAULT_RETRIEVAL_K):
+    def _get_retriever(self, top_k: int = _DEFAULT_RETRIEVAL_K, metadata_filters: MetadataFilters = None):
         return self.vector_index().as_retriever(
             similarity_top_k=top_k, 
+            filters=metadata_filters
         )
 
-    def query_engine(self, top_k: int = _DEFAULT_RETRIEVAL_K, node_postprocessors = None) -> Any:
+    def query_engine(self, top_k: int = _DEFAULT_RETRIEVAL_K, metadata_filters: MetadataFilters = None, node_postprocessors = None) -> Any:
         "Return a Query Engine for this document."
         
-        retriever = self._get_retriever(top_k = top_k)
+        retriever = self._get_retriever(top_k = top_k, metadata_filters=metadata_filters)
         return MultimodalQueryEngine(
-                    retriever=self.vector_index().as_retriever(
-                        similarity_top_k=top_k, 
-                    ), 
+                    retriever=retriever, 
                     multi_modal_llm=_MM_LLM, 
                     node_postprocessors = node_postprocessors,
                 )
     
-    def query_engine_tool(self, top_k: int = _DEFAULT_RETRIEVAL_K) -> QueryEngineTool:
+    def query_engine_tool(self, top_k: int = _DEFAULT_RETRIEVAL_K, metadata_filters: MetadataFilters = None, ) -> QueryEngineTool:
         "Return a Tool that can query this document."
         cohere_rerank = CohereRerank(top_n=10)
         return QueryEngineTool(
                 query_engine=self.query_engine( 
                     top_k = top_k,
-                    node_postprocessors=[cohere_rerank]
+                    metadata_filters=metadata_filters,
+                    node_postprocessors=[]#[cohere_rerank]
                 ),
                 metadata=ToolMetadata(
                     name=f"{self.name}_multimodal_vector_tool",
@@ -537,6 +538,9 @@ class ScientificDocImageNodeRevision(BaseModel):
     )
 
 
+from llama_index.core.node_parser import get_leaf_nodes
+from llama_index.core.schema import TextNode, IndexNode, NodeRelationship, RelatedNodeInfo
+
 class ScientificPaperHandler(MultiModalDocumentHandler):
 
     # _LLMSHERPA_LOCAL_URL = "http://localhost:5010/api/parseDocument?renderFormat=all"
@@ -559,9 +563,10 @@ class ScientificPaperHandler(MultiModalDocumentHandler):
 
         super().__init__(**kwargs)
 
-    def _get_retriever(self, top_k: int = _DEFAULT_RETRIEVAL_K):
+
+    # def _get_retriever(self, top_k: int = _DEFAULT_RETRIEVAL_K):
         
-        
+
 
 
     def _llamaindex_parse(self):
@@ -852,74 +857,6 @@ ATTEMPTED DESCRIPTION:
         return page_metadata_responses
                 
 
-        
-    # def _process_nodes(self, nodes):
-
-    #     image_documents = [
-    #         ImageNode(
-    #             image_path = image['image_path'],
-    #             text = node.text,
-    #             metadata = node.metadata
-    #         )
-    #         for node in nodes
-    #         for image in node.metadata['images']
-    #     ]
-
-    #     # EXTRACT_TEMPLATE_STR = """\
-    #     # You will create metadata about the following content. The information you need to generate the metadata \
-    #     # can be found in the content below or in the provided images.
-
-    #     # Here is the content of the section:
-    #     # ----------------
-    #     # {input}
-    #     # ----------------
-    #     # """
-
-    #     # openai_program = MultiModalLLMCompletionProgram.from_defaults(
-    #     #     output_cls=ScientificDocNodeMetadata,
-    #     #     image_documents=image_documents,
-    #     #     prompt_template_str="{input}",
-    #     #     # prompt=EXTRACT_TEMPLATE_STR,
-    #     #     multi_modal_llm=_GPT4O_MULTIMODAL,
-    #     #     verbose=True,
-    #     # )
-
-    #     # program_extractor = PydanticProgramExtractor(
-    #     #     program=openai_program, input_key="input", show_progress=True, in_place = False
-    #     # )
-
-    #     # from time import sleep
-
-    #     # BATCH_SIZE = 10
-
-    #     # processed_nodes = []
-    #     # for batch_idx in range(len(nodes)//BATCH_SIZE + 1):
-    #     #     batch_finished = False
-    #     #     while not batch_finished:
-    #     #         try:
-    #     #             new_nodes = program_extractor.process_nodes(nodes[batch_idx*BATCH_SIZE:(batch_idx + 1)*BATCH_SIZE], num_workers=1)
-    #     #             batch_finished = True
-    #     #         except Exception as e:
-    #     #             print(f"Sleeping because of exception: {e}")
-    #     #             sleep(60.)
-    #     #             # raise(e)
-    #     #     processed_nodes += new_nodes
-
-    #     save_dir = os.path.join(self.storage_dir,'saved_nodes',self.name)
-    #     # if not os.path.exists(save_dir):
-    #     #     os.mkdir(save_dir)
-    #     save_file = os.path.join(save_dir,'nodes.pkl')
-    #     # pickle.dump(processed_nodes, open(save_file,"wb"))
-
-    #     processed_nodes = pickle.load(open(save_file,"rb"))
-
-    #     # return processed_nodes
-    #     # good_nodes = [
-    #     #     node for node in processed_nodes if not node.metadata['is_aux_text']
-    #     # ]
-
-    #     # return good_nodes
-
     def _build_markdown_nodes(self, page_dicts):
 
         full_text = ""
@@ -934,51 +871,104 @@ ATTEMPTED DESCRIPTION:
     
     def load_docs(self):
 
-        # image_nodes = self._get_image_nodes_groundx()
-        # pickle.dump(image_nodes, open(os.path.join(self.storage_dir, "image_nodes.pkl"), "wb"))
-        image_nodes = pickle.load(open(os.path.join(self.storage_dir, "image_nodes.pkl"), "rb"))
+        # # image_nodes = self._get_image_nodes_groundx()
+        # # pickle.dump(image_nodes, open(os.path.join(self.storage_dir, "image_nodes.pkl"), "wb"))
+        # image_nodes = pickle.load(open(os.path.join(self.storage_dir, "image_nodes.pkl"), "rb"))
 
-        # # doc_tree = self._llmsherpa_text_parse()
-        text_nodes, full_page_dicts = self._llamaindex_parse()
-        # pickle.dump(text_nodes, open(os.path.join(self.storage_dir, "text_nodes.pkl"), "wb"))
-        pickle.dump(full_page_dicts, open(os.path.join(self.storage_dir, "full_page_dicts.pkl"), "wb"))
+        # # # doc_tree = self._llmsherpa_text_parse()
+        # text_nodes, full_page_dicts = self._llamaindex_parse()
+        # # pickle.dump(text_nodes, open(os.path.join(self.storage_dir, "text_nodes.pkl"), "wb"))
+        # pickle.dump(full_page_dicts, open(os.path.join(self.storage_dir, "full_page_dicts.pkl"), "wb"))
         
 
         
-        text_nodes = pickle.load(open(os.path.join(self.storage_dir, "text_nodes.pkl"), "rb"))
-        full_page_dicts = pickle.load(open(os.path.join(self.storage_dir, "full_page_dicts.pkl"), "rb"))
+        # text_nodes = pickle.load(open(os.path.join(self.storage_dir, "text_nodes.pkl"), "rb"))
+        # full_page_dicts = pickle.load(open(os.path.join(self.storage_dir, "full_page_dicts.pkl"), "rb"))
 
-        claude_mm = BasicAnthropicAgent(model="claude-3-5-sonnet-20240620")
-        for node in image_nodes:
-            page_num = node.metadata.get("page_number")
-            for page_dict in full_page_dicts:
-                if page_dict.get("page_number") == page_num:
-                    page_img = Image.open(page_dict.get("path"))
+        # claude_mm = BasicAnthropicAgent(model="claude-3-5-sonnet-20240620")
+        # for node in image_nodes:
+        #     page_num = node.metadata.get("page_number")
+        #     for page_dict in full_page_dicts:
+        #         if page_dict.get("page_number") == page_num:
+        #             page_img = Image.open(page_dict.get("path"))
 
-            response = requests.get(node.image_url)
-            fig_image = Image.open(BytesIO(response.content))
-            class FigureName(BaseModel):
-                figure_name: str = Field(
-                    ...,
-                    description="The name of the figure in the scientific paper (e.g. Figure 1, Figure 2, etc.)."
-                )
-            prompt = "Which figure is shown in the cropped image? Use the full page image as a reference."
+        #     response = requests.get(node.image_url)
+        #     fig_image = Image.open(BytesIO(response.content))
+        #     class FigureName(BaseModel):
+        #         figure_name: str = Field(
+        #             ...,
+        #             description="The name of the figure in the scientific paper (e.g. Figure 1, Figure 2, etc.)."
+        #         )
+        #     prompt = "Which figure is shown in the cropped image? Use the full page image as a reference."
 
-            output_parser = PydanticOutputParser(output_cls=FigureName)
-            prompt_figure_name = PromptTemplate(
-                prompt,
-                output_parser=output_parser
-            ).format(llm=plotreader._CLAUDE_SONNET35_MULTIMODAL)
+        #     output_parser = PydanticOutputParser(output_cls=FigureName)
+        #     prompt_figure_name = PromptTemplate(
+        #         prompt,
+        #         output_parser=output_parser
+        #     ).format(llm=plotreader._CLAUDE_SONNET35_MULTIMODAL)
 
             
-            response = claude_mm.message(prompt_figure_name, images=[fig_image, page_img])
-            figure_name = output_parser.parse(response.content[0].text)
-            node.metadata['fig_refs'] = [figure_name.figure_name]
+        #     response = claude_mm.message(prompt_figure_name, images=[fig_image, page_img])
+        #     figure_name = output_parser.parse(response.content[0].text)
+        #     node.metadata['fig_refs'] = [figure_name.figure_name]
 
-        all_nodes = text_nodes + image_nodes
+        # all_nodes = text_nodes + image_nodes
 
-        pickle.dump(all_nodes, open(os.path.join(self.storage_dir, "all_nodes.pkl"), "wb"))
+        # pickle.dump(all_nodes, open(os.path.join(self.storage_dir, "all_nodes.pkl"), "wb"))
         all_nodes = pickle.load(open(os.path.join(self.storage_dir, "all_nodes.pkl"), "rb"))
 
+        index_nodes = self._build_hierarchical_structure(all_nodes)
+
+        # all_nodes += index_nodes
                     
         return all_nodes
+
+    def _build_hierarchical_structure(self, nodes: List[TextNode]) -> List[IndexNode]:
+        hierarchical_nodes: dict[str, IndexNode] = {}
+        root = IndexNode(text="Root", index_id="root")
+        hierarchical_nodes[""] = root
+
+        for node in nodes:
+
+            MAX_DEPTH = 10
+            metadata = node.metadata
+            headers = [metadata.get(f"Header_{i}", "") for i in range(1, MAX_DEPTH) if f"Header_{i}" in metadata]
+            
+            current_path = ""
+            parent_node = root
+            
+            for i, header in enumerate(headers):
+                current_path += header
+                if current_path not in hierarchical_nodes:
+                    new_index_node = IndexNode(text=header, index_id=f"index_{current_path.replace('/', '_')}")
+                    hierarchical_nodes[current_path] = new_index_node
+                    # parent_node.add_child(new_index_node)
+                    if parent_node.relationships.get(NodeRelationship.CHILD) is None:
+                        parent_node.relationships[NodeRelationship.CHILD] = []
+                    child_rel = [RelatedNodeInfo(
+                        node_id=new_index_node.node_id,
+                        # node_type=new_index_node.node_type,
+                    )]
+                    parent_node.relationships[NodeRelationship.CHILD] += child_rel
+                    parent_node = new_index_node
+                else:
+                    parent_node = hierarchical_nodes[current_path]
+
+            # Add the original TextNode as a child of the deepest IndexNode
+            # parent_node.add_child(node)
+            if parent_node.relationships.get(NodeRelationship.CHILD) is None:
+                parent_node.relationships[NodeRelationship.CHILD] = []
+            child_rel = [RelatedNodeInfo(
+                node_id=node.node_id,
+                # node_type=new_index_node.node_type,
+            )]
+            parent_node.relationships[NodeRelationship.CHILD] += child_rel
+
+            # Update relationships
+            node.relationships[NodeRelationship.PARENT] = RelatedNodeInfo(
+                node_id=parent_node.node_id,
+                # node_type=parent_node.node_type,
+                # metadata={"header": headers[-1] if headers else ""}
+            )
+
+        return list(hierarchical_nodes.values())
