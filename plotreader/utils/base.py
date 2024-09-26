@@ -7,7 +7,7 @@ from anthropic.types.message import Message
 from plotreader.utils import image_to_base64
 
 
-class BasicAnthropicAgent:
+class BasicAnthropicLLM:
 
     def __init__(
             self,
