@@ -333,7 +333,7 @@ class MultiModalDocumentHandler(DocumentHandler):
                 query_engine=self.query_engine( 
                     top_k = top_k,
                     metadata_filters=metadata_filters,
-                    node_postprocessors=[]#[cohere_rerank]
+                    node_postprocessors=[cohere_rerank]
                 ),
                 metadata=ToolMetadata(
                     name=f"{self.name}_multimodal_vector_tool",
