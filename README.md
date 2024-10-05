@@ -74,7 +74,7 @@ Figure 2
 			independent_variables=[Variable(name='Light intensity', categorical=False, numeric=True), Variable(name='ChR variant', categorical=True, numeric=False)] dependent_variables=[Variable(name='Steady-state photocurrent', categorical=False, numeric=True)]
 ```
 
-### Step 2: Extract values for independent and dependent variables from a single plot
+### Step 2: Extract experiment and plot details
 
 Next, we extract more detailed structured information about a particular plot/experiment:
 
