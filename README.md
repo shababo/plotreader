@@ -1,28 +1,21 @@
 # Plotreader
 
-Use LLMs to generate and read plots. Combine them into a teacher-student pair to improve performance.
+A tool that can aggregate information from scientific figures into structured data. For example, extract the functional properities of different variants of opsins - both natual and engineered.
 
-## Problem
+### Approach
 
-Build a tool that can aggregate information from scientific figures into structured data. For example, extract the functional properities of different variants of opsins - both natual and engineered.
-
-## Approach
-
-### Reader
-
+#### Reader
 Design an agent that can take in a paper and extract the quantitative results into structured data.
 
-### Generator
-
+#### Generator
 Design an agent that takes in a data scenario and paper/figure examples and then outputs structured data, the data plotted into a figure, and several quantitative questions about the figure with difficulty rankings.
 
-### Curriculum Design
+#### Fine-tuning
+The hope is that the generator could potentially create a dataset to fine-tune the reader by simulating fake experiments and comparing the extrated data to the source data in a loss function. I'm also interested in the possibility of curriculum design such that the generator starts with easy examples and increases diffulty as the reader's performance increases.
 
-For now, I'm prototyping independent plot readers and generators, but the original idea was to combine the reader and generator into an RL training loop with the reader as student and the generator as teacher.
+# Results
 
-## Results
-
-### Plot Reading
+## Plot Reading
 
 Input Figure (from [Machine learning-guided channelrhodopsin engineering enables minimally invasive optogenetics
 ](https://www.nature.com/articles/s41592-019-0583-8)):
@@ -30,152 +23,273 @@ Input Figure (from [Machine learning-guided channelrhodopsin engineering enables
 
 ![plot](./docs/images/opsin_features_test_w_caption_full_fig.png?)
 
-#### Step 1: Extract experiments from figure.
+### Step 1: Extract experiments from figure.
 
-Prompt:
-```Python
-prompt = "For each plot in each panel determine the experiment in terms of independent variables (IVs) and dependent variable (DV)."
-```
+The first step in analyzing a figure is to break down the figure into experiments by plot and to aggregate a legend across the full figure.
 
 Structured Output:
 ```
-Panel: a
-	Plot: Current traces
-		independent_variables=['Time', 'ChR variant'] dependent_variables=['Current']
-Panel: b
-	Plot: Photocurrent strength with different wavelength excitation
-		independent_variables=['ChR variant', 'Wavelength', 'Current type (Peak/Steady state)'] dependent_variables=['Photocurrent']
-Panel: c
-	Plot: Off-kinetics decay time
-		independent_variables=['ChR variant'] dependent_variables=['Off-kinetics decay time (τoff)']
-	Plot: Current traces for select variants
-		independent_variables=['Time', 'ChR variant'] dependent_variables=['Current']
-Panel: d
-	Plot: Wavelength sensitivity
-		independent_variables=['Wavelength', 'ChR variant'] dependent_variables=['Normalized photocurrent']
-Panel: e
-	Plot: Peak photocurrent vs Intensity
-		independent_variables=['Light intensity', 'ChR variant'] dependent_variables=['Peak photocurrent']
-	Plot: Steady-state photocurrent vs Intensity
-		independent_variables=['Light intensity', 'ChR variant'] dependent_variables=['Steady-state photocurrent']
+Figure 2
+	Legend: [
+    CategoryMap(
+      type='color', 
+      values={
+        'CheRiff': [0.5, 0.5, 0.5], 
+        'CsChrimR': [0.0, 0.0, 0.0], 
+        'C1C2': [0.5, 0.5, 0.5], 
+        '11_10': [0.0, 1.0, 1.0], 
+        '12_10': [1.0, 0.0, 1.0], 
+        '25_9': [0.0, 1.0, 1.0], 
+        '10_10': [1.0, 1.0, 0.0], 
+        '15_10': [0.0, 0.0, 1.0], 
+        '28_10': [1.0, 0.5, 0.0], 
+        '21_10': [0.5, 0.0, 0.5], 
+        '3_10': [1.0, 0.0, 0.0]
+      }
+    )
+  ]
+	Panel: a
+
+		Plot: Current traces and cell images (plot.text_discrepancies: [])
+			independent_variables=[Variable(name='ChR variant', categorical=True, numeric=False), Variable(name='Time', categorical=False, numeric=True)] dependent_variables=[Variable(name='Current', categorical=False, numeric=True), Variable(name='Fluorescence', categorical=False, numeric=True)]
+	Panel: b
+
+		Plot: Photocurrent strength with different wavelength excitation (plot.text_discrepancies: [])
+			independent_variables=[Variable(name='ChR variant', categorical=True, numeric=False), Variable(name='Wavelength', categorical=True, numeric=True)] dependent_variables=[Variable(name='Photocurrent', categorical=False, numeric=True)]
+	Panel: c
+
+		Plot: Off-kinetics decay rate (plot.text_discrepancies: [])
+			independent_variables=[Variable(name='ChR variant', categorical=True, numeric=False)] dependent_variables=[Variable(name='τoff', categorical=False, numeric=True)]
+		Plot: Representative current traces (plot.text_discrepancies: [])
+			independent_variables=[Variable(name='ChR variant', categorical=True, numeric=False), Variable(name='Time', categorical=False, numeric=True)] dependent_variables=[Variable(name='Current', categorical=False, numeric=True)]
+	Panel: d
+
+		Plot: Normalized photocurrent vs wavelength (plot.text_discrepancies: [])
+			independent_variables=[Variable(name='Wavelength', categorical=False, numeric=True), Variable(name='ChR variant', categorical=True, numeric=False)] dependent_variables=[Variable(name='Normalized photocurrent', categorical=False, numeric=True)]
+	Panel: e
+
+		Plot: Peak photocurrent vs intensity (plot.text_discrepancies: [])
+			independent_variables=[Variable(name='Light intensity', categorical=False, numeric=True), Variable(name='ChR variant', categorical=True, numeric=False)] dependent_variables=[Variable(name='Peak photocurrent', categorical=False, numeric=True)]
+		Plot: Steady-state photocurrent vs intensity (plot.text_discrepancies: [])
+			independent_variables=[Variable(name='Light intensity', categorical=False, numeric=True), Variable(name='ChR variant', categorical=True, numeric=False)] dependent_variables=[Variable(name='Steady-state photocurrent', categorical=False, numeric=True)]
 ```
 
-#### Step 2: Extract values for independent and dependent variables from a single plot
+### Step 2: Extract values for independent and dependent variables from a single plot
 
-Prompts:
-```python
-prompt = """In Panel {panel_name}, plot number {plot_ind}, what values are taken by the independent variable {ind_var_name}?
-If the variable is not quantitative (like an image), only set the name field of IndependentVariable.
-Return your answer as structured data.
-""".format(
-    panel_name = figure.panels[panel_ind].name, 
-    plot_ind=plot_ind+1, 
-    ind_var_name = iv
-)
-```
-
-```python
-prompt = """In Panel {panel_name}, plot number {plot_ind}, what statistics used to quantify the deependant variable {dep_var_name} like mean or SEM?
-If the variable is not quantitative (like an image), only set the name field of DependentVariable.
-Return your answer as structured data.
-""".format(
-    panel_name = figure.panels[panel_ind].name, 
-    plot_ind=plot_ind+1, 
-    dep_var_name = dv
-)
-```
+Next, we extract more detailed structured information about a particular plot/experiment:
 
 Structured Output:
-
-The values for `Wavelength` are not correct. Hoping to resolve this by allowing RAG over full paper.
-
 ```
-Panel d, Independent Vars:
-name='Wavelength' values=[400, 450, 500, 550, 600, 650] unit='nm'
-name='ChR variant' values=['ChRger1', 'ChRger2', 'ChRger3', 'ChR_25_9', 'ChR_15_10', 'CsChrimR', 'ChRiff'] unit='None'
+{
+    "independent_variables": [
+        {
+            "name": "Wavelength",
+            "category_maps": [],
+            "numeric_axis": {
+                "unit": "nm",
+                "is_log": false,
+                "major_tick_mark_values": [
+                    400.0,
+                    500.0,
+                    600.0
+                ]
+            }
+        },
+        {
+            "name": "ChR variant",
+            "category_maps": [
+                {
+                    "type": "color",
+                    "values": {
+                        "CheRiff": [
+                            0.5,
+                            0.5,
+                            0.5
+                        ],
+                        "CsChrimR": [
+                            0.0,
+                            0.0,
+                            0.0
+                        ],
+                        "C1C2": [
+                            0.7,
+                            0.7,
+                            0.7
+                        ],
+                        "11_10": [
+                            0.0,
+                            0.8,
+                            0.8
+                        ],
+                        "25_9": [
+                            0.0,
+                            0.5,
+                            1.0
+                        ],
+                        "28_10": [
+                            1.0,
+                            0.5,
+                            0.0
+                        ]
+                    }
+                },
+                {
+                    "type": "marker",
+                    "values": {
+                        "CheRiff": "o",
+                        "CsChrimR": "o",
+                        "C1C2": "o",
+                        "11_10": "o",
+                        "25_9": "o",
+                        "28_10": "o"
+                    }
+                }
+            ],
+            "numeric_axis": {
+                "unit": "",
+                "is_log": false,
+                "major_tick_mark_values": []
+            }
+        }
+    ],
+    "dependent_variables": [
+        {
+            "name": "Normalized photocurrent",
+            "category_maps": [],
+            "numeric_axis": {
+                "unit": "",
+                "is_log": false,
+                "major_tick_mark_values": [
+                    0.0,
+                    0.25,
+                    0.5,
+                    0.75,
+                    1.0
+                ]
+            }
+        }
+    ],
+    "parameters": [
+        {
+            "name": "Light intensity",
+            "value": "1.3 mW mm^-2"
+        },
+        {
+            "name": "Light pulse duration",
+            "value": "0.5 s"
+        }
+    ],
+    "description": "This experiment measures the normalized photocurrent of different ChR variants across a range of wavelengths.",
+    "result": "The plot shows that different ChR variants have distinct spectral sensitivities. CheRiff and C1C2 have peak sensitivity around 450-500 nm, while CsChrimR and ChR_28_10 are red-shifted with peak sensitivity around 550-600 nm. ChR_11_10 shows a broad activation spectrum, and ChR_25_9 has a narrow activation spectrum peaking around 500 nm.",
+    "other_info": "Measurements were taken at seven different wavelengths: 397 \u00b1 3 nm, 439 \u00b1 8 nm, 481 \u00b1 3 nm, 523 \u00b1 6 nm, 546 \u00b1 16 nm, 567 \u00b1 13 nm, and 640 \u00b1 3 nm. The light intensity was matched across wavelengths at 1.3 mW mm^-2.",
+    "plot_type": "line plot"
+}
 ```
+### Step 3: Determine the values for the independent variables in the panel.
+
+Structured output:
 ```
-Panel d, Dependent Vars:
-name='Normalized photocurrent' statistics=['mean', 's.e.m.'] unit='None'
+[
+  NumericVariable(
+    name='Wavelength', 
+    values=[397.0, 439.0, 481.0, 523.0, 546.0, 567.0, 640.0], 
+    unit='nm'
+  ),
+  CategoricalVariable(
+    name='ChR variant', 
+    labels=[
+      CategoryMap(
+        type='color', 
+        values={
+          'CheRiff': [0.5, 0.5, 0.5], 
+          'CsChrimR': [0.0, 0.0, 0.0], 
+          'C1C2': [0.7, 0.7, 0.7], 
+          '11_10': [0.0, 0.8, 0.8], 
+          '25_9': [0.0, 0.5, 1.0], 
+          '28_10': [1.0, 0.5, 0.0]
+        }
+      ), 
+      CategoryMap(
+        type='marker', 
+        values={
+          'CheRiff': 'o', 
+          'CsChrimR': 'o', 
+          'C1C2': 'o', 
+          '11_10': 'o', 
+          '25_9': 'o', 
+          '28_10': 
+          'o'
+        }
+      )
+    ]
+  )
+]
 ```
+### Step 4: Extract dependent variable statistics for each condition as a table
 
-Step 3: Extract dependent variable statistics for each condition
-
-Prompt:
-```python
-columns = {iv.name: pd.Series() for iv in ind_vars}
-columns.update({dv.name: pd.Series()})
-df = pd.DataFrame(columns)
-
-prompt = """In Panel {panel_name}, what are the values of the {dep_var_stat} for the dependent variable {dep_var_name}?
-If the variable is not quantitative (like an image), only set the name field of IndependentVariable.
-Get the value for each condition. To help, here are the values the independent variable takes:
-{ind_vars}
-IMPORTANT:
-    THE EXPECTED VALUES FOR THE INDEPENDENT VARIABLES MAY BE INCORRECT. DO YOUR BEST TO ESTIMATE THE VALUE FOR THE INPUTS FROM THE PLOT.
-The column schema is the following: {schema}.
-""".format(
-    panel_name = figure.panels[panel_ind].name, 
-    dep_var_stat = dv.statistics[0],
-    dep_var_name = dv.name,
-    ind_vars = ind_vars,
-    schema = ", ".join(df.columns),
-)
-```
-
-Structured Output:
-|FIELD1|Wavelength|ChR variant|Normalized photocurrent|
+|INDEX |Wavelength|ChR variant|Normalized photocurrent|
 |------|----------|-----------|-----------------------|
-|0     |400       |ChRiff     |0.65                   |
-|1     |450       |ChRiff     |0.95                   |
-|2     |500       |ChRiff     |1.0                    |
-|3     |550       |ChRiff     |0.95                   |
-|4     |600       |ChRiff     |0.65                   |
-|5     |650       |ChRiff     |0.55                   |
-|6     |400       |CsChrimR   |0.5                    |
-|7     |450       |CsChrimR   |0.75                   |
-|8     |500       |CsChrimR   |1.0                    |
-|9     |550       |CsChrimR   |0.95                   |
-|10    |600       |CsChrimR   |0.6                    |
-|11    |650       |CsChrimR   |0.5                    |
-|12    |400       |C1C2       |0.45                   |
-|13    |450       |C1C2       |0.7                    |
-|14    |500       |C1C2       |0.95                   |
-|15    |550       |C1C2       |1.0                    |
-|16    |600       |C1C2       |0.65                   |
-|17    |650       |C1C2       |0.55                   |
-|18    |400       |28_10      |0.9                    |
-|19    |450       |28_10      |1.0                    |
-|20    |500       |28_10      |0.85                   |
-|21    |550       |28_10      |0.45                   |
-|22    |600       |28_10      |0.05                   |
-|23    |650       |28_10      |0.0                    |
-|24    |400       |11_10      |0.7                    |
-|25    |450       |11_10      |1.0                    |
-|26    |500       |11_10      |0.8                    |
-|27    |550       |11_10      |0.2                    |
-|28    |600       |11_10      |0.05                   |
-|29    |650       |11_10      |0.0                    |
-|30    |400       |25_9       |0.95                   |
-|31    |450       |25_9       |1.0                    |
-|32    |500       |25_9       |0.8                    |
-|33    |550       |25_9       |0.5                    |
-|34    |600       |25_9       |0.05                   |
-|35    |650       |25_9       |0.0                    |
+|0     |397.0     |CheRiff    |0.65                   |
+|1     |397.0     |CsChrimR   |0.45                   |
+|2     |397.0     |C1C2       |0.73                   |
+|3     |397.0     |11_10      |0.51                   |
+|4     |397.0     |25_9       |0.92                   |
+|5     |397.0     |28_10      |0.43                   |
+|6     |439.0     |CheRiff    |0.9                    |
+|7     |439.0     |CsChrimR   |0.52                   |
+|8     |439.0     |C1C2       |0.9                    |
+|9     |439.0     |11_10      |0.76                   |
+|10    |439.0     |25_9       |0.97                   |
+|11    |439.0     |28_10      |0.49                   |
+|12    |481.0     |CheRiff    |0.95                   |
+|13    |481.0     |CsChrimR   |0.69                   |
+|14    |481.0     |C1C2       |1.0                    |
+|15    |481.0     |11_10      |1.0                    |
+|16    |481.0     |25_9       |0.89                   |
+|17    |481.0     |28_10      |0.63                   |
+|18    |523.0     |CheRiff    |0.32                   |
+|19    |523.0     |CsChrimR   |0.71                   |
+|20    |523.0     |C1C2       |0.76                   |
+|21    |523.0     |11_10      |0.64                   |
+|22    |523.0     |25_9       |0.47                   |
+|23    |523.0     |28_10      |0.99                   |
+|24    |546.0     |CheRiff    |0.08                   |
+|25    |546.0     |CsChrimR   |0.93                   |
+|26    |546.0     |C1C2       |0.92                   |
+|27    |546.0     |11_10      |0.15                   |
+|28    |546.0     |25_9       |0.08                   |
+|29    |546.0     |28_10      |0.89                   |
+|30    |567.0     |CheRiff    |0.03                   |
+|31    |567.0     |CsChrimR   |0.95                   |
+|32    |567.0     |C1C2       |0.81                   |
+|33    |567.0     |11_10      |0.03                   |
+|34    |567.0     |25_9       |0.01                   |
+|35    |567.0     |28_10      |0.57                   |
+|36    |640.0     |CheRiff    |0.01                   |
+|37    |640.0     |CsChrimR   |0.57                   |
+|38    |640.0     |C1C2       |0.01                   |
+|39    |640.0     |11_10      |0.0                    |
+|40    |640.0     |25_9       |0.0                    |
+|41    |640.0     |28_10      |0.49                   |
 
 
-Plotting extracted data:
+We can replot the data using our extracted values and colors.
 
-Note: colors were not extracted and so not matched. Not a perfect result - some of this may come from incorrectly extracting the `Wavelength` values.
 
-| Extracted | Source |
+| Initial Extraction | Source |
+| -- | -- |
+| ![plot](./docs/images/initial_extraction_example.png?) | ![plot](./docs/images/original_plot_for_extraction.png?) |
+
+
+### Step 5: Iteratively improve extraction by alternating between a critique substep and revision substep.
+
+| 20 Revision Iterations | Source |
 | -- | -- |
 | ![plot](./docs/images/extracted_data_plot.png?) | ![plot](./docs/images/original_plot_for_extraction.png?) |
 
+## Plot Generation
 
-### Plot Generation
-
-#### Input
+### Input
 
 Prompt with both text and example figures.
 ```Python
@@ -201,9 +315,9 @@ Two of the example figures it was given (from [Machine learning-guided channelrh
 
 
 
-#### Output
+### Output
 
-##### Generated Figures
+#### Generated Figures
 
 | Example 1 | Example 2|
 | -- | -- |
