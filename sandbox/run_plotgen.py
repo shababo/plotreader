@@ -1,4 +1,4 @@
-from plotreader.generator import PlotGenerator
+from plotreader.generator.agent import PlotGenerator
 
 
 if __name__ == "__main__":
