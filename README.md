@@ -280,6 +280,9 @@ We can replot the data using our extracted values and colors.
 | -- | -- |
 | ![plot](./docs/images/initial_extraction_example.png?) | ![plot](./docs/images/original_plot_for_extraction.png?) |
 
+Another example:
+![plot](./output/figure3d_recreation_comparison.png?)
+
 
 ### Step 5: Iteratively improve extraction by alternating between a critique substep and revision substep.
 
