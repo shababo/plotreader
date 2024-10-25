@@ -280,7 +280,8 @@ We can replot the data using our extracted values and colors.
 | -- | -- |
 | ![plot](./docs/images/initial_extraction_example.png?) | ![plot](./docs/images/original_plot_for_extraction.png?) |
 
-Another example:
+### Another example:
+
 ![plot](./output/figure3d_recreation_comparison.png?)
 
 
